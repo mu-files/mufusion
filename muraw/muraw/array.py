@@ -413,18 +413,83 @@ def divide(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
 
 
 def sqrt(x: ArrayLike) -> "Array":
-    """NumPy's ``sqrt``. A negative float is NaN. A uint8 input gives
+    """NumPy's ``sqrt``. A negative float is NaN. A bool or uint8 input
+    gives float16, and a uint16 input gives float32."""
+    return _float_unary("sqrt", x)
+
+
+def sin(x: ArrayLike) -> "Array":
+    """NumPy's ``sin``, with the angle in radians. A bool or uint8 input
+    gives float16, and a uint16 input gives float32."""
+    return _float_unary("sin", x)
+
+
+def cos(x: ArrayLike) -> "Array":
+    """NumPy's ``cos``, with the angle in radians. A bool or uint8 input
+    gives float16, and a uint16 input gives float32."""
+    return _float_unary("cos", x)
+
+
+def tan(x: ArrayLike) -> "Array":
+    """NumPy's ``tan``, with the angle in radians. A bool or uint8 input
+    gives float16, and a uint16 input gives float32."""
+    return _float_unary("tan", x)
+
+
+def arcsin(x: ArrayLike) -> "Array":
+    """NumPy's ``arcsin`` and ``asin``, in radians in ``[-pi/2, pi/2]``.
+    A sample outside ``[-1, 1]`` is NaN. A bool or uint8 input gives
     float16, and a uint16 input gives float32."""
-    if not isinstance(x, Array):
-        x = Array(np.asarray(x))
+    return _float_unary("arcsin", x)
+
+
+asin = arcsin
+
+
+def arccos(x: ArrayLike) -> "Array":
+    """NumPy's ``arccos`` and ``acos``, in radians in ``[0, pi]``. A
+    sample outside ``[-1, 1]`` is NaN. A bool or uint8 input gives
+    float16, and a uint16 input gives float32."""
+    return _float_unary("arccos", x)
+
+
+acos = arccos
+
+
+def arctan(x: ArrayLike) -> "Array":
+    """NumPy's ``arctan`` and ``atan``, in radians in ``[-pi/2, pi/2]``.
+    A bool or uint8 input gives float16, and a uint16 input gives float32."""
+    return _float_unary("arctan", x)
+
+
+atan = arctan
+
+
+def arctan2(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
+    """NumPy's ``arctan2`` and ``atan2``: the signed angle in radians, in
+    ``[-pi, pi]``, from the positive x-axis to ``(x2, x1)``, broadcast. A
+    bool or uint8 pair gives float16, and a uint16 pair gives float32. A
+    Python ``float`` beside an integer gives float32, where NumPy gives
+    float64.
+    """
     from .engines.graph import op
 
-    return op("sqrt", x)
+    dtype = _arctan2_dtype(x1, x2)
+    d1 = None if type(x1) in (int, float, bool) else _operand_dtype(x1, None)
+    d2 = None if type(x2) in (int, float, bool) else _operand_dtype(x2, None)
+    stored = d1 if d1 is not None and d1 == d2 and d1.kind in ("u", "b") else dtype
+    first, second = _broadcast_pair(
+        "arctan2", _operand_array(x1, stored), _operand_array(x2, stored)
+    )
+    return op("arctan2", first, second)
+
+
+atan2 = arctan2
 
 
 def ceil(x: ArrayLike) -> "Array":
     """NumPy's ``ceil``. Each sample rounds toward positive infinity. The
-    result has ``x``'s dtype. An integer array is returned unchanged."""
+    result has ``x``'s dtype. A bool or integer array is returned unchanged."""
     if not isinstance(x, Array):
         x = Array(np.asarray(x))
     if x.dtype.kind != "f":
@@ -436,7 +501,7 @@ def ceil(x: ArrayLike) -> "Array":
 
 def floor(x: ArrayLike) -> "Array":
     """NumPy's ``floor``. Each sample rounds toward negative infinity. The
-    result has ``x``'s dtype. An integer array is returned unchanged."""
+    result has ``x``'s dtype. A bool or integer array is returned unchanged."""
     if not isinstance(x, Array):
         x = Array(np.asarray(x))
     if x.dtype.kind != "f":
@@ -448,23 +513,24 @@ def floor(x: ArrayLike) -> "Array":
 
 def rint(x: ArrayLike) -> "Array":
     """NumPy's ``rint``. Each sample rounds to the nearest integer, and a
-    half rounds to the even integer. A float keeps its dtype. A uint8
-    input gives float16, and a uint16 input gives float32."""
-    if not isinstance(x, Array):
-        x = Array(np.asarray(x))
-    from .engines.graph import op
-
-    return op("rint", x)
+    half rounds to the even integer. A float keeps its dtype. A bool or
+    uint8 input gives float16, and a uint16 input gives float32."""
+    return _float_unary("rint", x)
 
 
 def round(x: ArrayLike, decimals: int = 0) -> "Array":
     """NumPy's ``round``. ``decimals`` is how many digits to keep after
     the decimal point, or to the left of it when negative. A half rounds
-    to the even integer. The result has ``x``'s dtype. An integer array
-    with a non-negative ``decimals`` is returned unchanged."""
+    to the even integer. The result has ``x``'s dtype, except a bool input
+    at ``decimals=0``, which gives float16. An integer array with a
+    non-negative ``decimals`` is returned unchanged."""
     decimals = operator.index(decimals)
     if not isinstance(x, Array):
         x = Array(np.asarray(x))
+    if _is_bool(x.dtype):
+        if decimals == 0:
+            return rint(x)
+        np.round(np.empty(0, np.bool_), decimals=decimals)
     if x.dtype.kind != "f" and decimals >= 0:
         return x
     if decimals == 0:
@@ -770,6 +836,40 @@ def _operand_array(value: Any, dtype: np.dtype) -> "Array":
     if type(value) in (int, float):
         value = np.array(value, dtype=dtype)
     return _logical_operand(value).astype(dtype)
+
+
+def _float_unary(name: str, x: ArrayLike) -> "Array":
+    from .engines.graph import op
+
+    if not isinstance(x, Array):
+        x = Array(np.asarray(x))
+    return op(name, x)
+
+
+def _arctan2_dtype(x1: Any, x2: Any) -> np.dtype:
+    """The float dtype ``arctan2(x1, x2)`` stores. A Python ``float``
+    beside an integer is float32, where NumPy gives float64."""
+
+    def _probe(value: Any) -> Any:
+        if isinstance(value, Array):
+            return np.empty(0, value.dtype)
+        if type(value) in (int, float, bool):
+            return value
+        return np.empty(0, np.asarray(value).dtype)
+
+    if type(x1) is int and type(x2) is int:
+        dtype = np.dtype(np.float64)
+    else:
+        with np.errstate(all="ignore"):
+            dtype = np.asarray(np.arctan2(_probe(x1), _probe(x2))).dtype
+    if dtype == np.float64 and float in (type(x1), type(x2)):
+        dtype = np.dtype(np.float32)
+    if dtype not in (np.dtype(np.float16), np.dtype(np.float32)):
+        raise NotImplementedError(
+            f"arctan2 result dtype {dtype.name} is not supported; "
+            "muimage stores float16 and float32"
+        )
+    return dtype
 
 
 def _bitwise_binary(name: str, ufunc: Any, x1: Any, x2: Any) -> "Array":

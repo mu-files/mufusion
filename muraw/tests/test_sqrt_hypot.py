@@ -70,6 +70,14 @@ def test_sqrt_of_integers_matches_numpy(dtype):
     np.testing.assert_allclose(got.realize(), want, rtol=rtol, atol=0)
 
 
+def test_sqrt_of_bool_matches_numpy():
+    src = np.array([[False, True, False], [True, True, False]])
+    got = _sqrt_line(mi, mi.Array(src))
+    want = _sqrt_line(np, src)
+    assert got.dtype == want.dtype
+    np.testing.assert_array_equal(got.realize(), want)
+
+
 @pytest.mark.parametrize("dtype", ["float16", "float32"])
 def test_hypot_matches_numpy(dtype):
     got = _hypot_lines(mi, dtype)

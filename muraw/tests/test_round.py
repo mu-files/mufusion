@@ -196,3 +196,18 @@ def test_floor_and_ceil_of_integers_keep_the_dtype(dtype, toward):
     want = _directed_count(np, dtype, toward)
     assert got.dtype == want.dtype
     np.testing.assert_array_equal(got.realize(), want)
+
+
+def test_rint_floor_ceil_and_round_of_bool_match_numpy():
+    src = np.array([[False, True, False], [True, True, False]])
+    for helper in (_rint, _floor, _ceil, _round):
+        got = helper(mi, mi.Array(src))
+        want = helper(np, src)
+        assert got.dtype == want.dtype
+        np.testing.assert_array_equal(got.realize(), want)
+
+    for decimals in (2, -1):
+        with pytest.raises(TypeError):
+            _round_at(mi, mi.Array(src), decimals)
+        with pytest.raises(TypeError):
+            _round_at(np, src, decimals)
