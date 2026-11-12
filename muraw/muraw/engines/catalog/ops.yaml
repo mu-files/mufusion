@@ -420,6 +420,91 @@ ops:
         dtype: float_holding_input
     attrs: []
 
+  # e raised to each sample. +inf gives inf, -inf gives 0, and a NaN stays
+  # NaN. A large positive overflows to inf, and a large negative underflows
+  # to 0. A float16 or float32 input keeps its dtype. A bool or uint8 input
+  # gives float16, and a uint16 input gives float32.
+  - name: exp
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # 2 raised to each sample. An integer sample is that power of two, until
+  # it overflows. +inf gives inf, -inf gives 0, and a NaN stays NaN. A
+  # float16 or float32 input keeps its dtype. A bool or uint8 input gives
+  # float16, and a uint16 input gives float32.
+  - name: exp2
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # e raised to each sample, minus one. 0 and -0 give 0 with the same sign.
+  # +inf gives inf, -inf gives -1, and a NaN stays NaN. A float16 or float32
+  # input keeps its dtype. A bool or uint8 input gives float16, and a uint16
+  # input gives float32.
+  - name: expm1
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # The natural logarithm of each sample. A negative sample and -inf are
+  # NaN. 0 and -0 give -inf. +inf gives inf, and a NaN stays NaN. A float16
+  # or float32 input keeps its dtype. A bool or uint8 input gives float16,
+  # and a uint16 input gives float32.
+  - name: log
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # The base-2 logarithm of each sample. A positive power of two is that
+  # integer. A negative sample and -inf are NaN. 0 and -0 give -inf. +inf
+  # gives inf, and a NaN stays NaN. A float16 or float32 input keeps its
+  # dtype. A bool or uint8 input gives float16, and a uint16 input gives
+  # float32.
+  - name: log2
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # The base-10 logarithm of each sample. A negative sample and -inf are
+  # NaN. 0 and -0 give -inf. +inf gives inf, and a NaN stays NaN. A float16
+  # or float32 input keeps its dtype. A bool or uint8 input gives float16,
+  # and a uint16 input gives float32.
+  - name: log10
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # The natural logarithm of one plus each sample. 0 and -0 give 0 with the
+  # same sign. -1 gives -inf. A sample below -1 is NaN. +inf gives inf, and
+  # a NaN stays NaN. A float16 or float32 input keeps its dtype. A bool or
+  # uint8 input gives float16, and a uint16 input gives float32.
+  - name: log1p
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
   # Each sample rounded to the nearest integer, and a half rounded to the
   # even integer. A float16 or float32 input keeps its dtype. A bool or
   # uint8 input gives float16, and a uint16 input gives float32.

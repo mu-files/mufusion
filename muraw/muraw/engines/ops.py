@@ -361,6 +361,83 @@ arctan = EngineOp(
     _infer_meta=None,
 )
 
+exp = EngineOp(
+    meta=OpMeta(name="exp", requires_2d=False, is_cfa=False, is_rgb=False),
+    _out_dtype=graph._out_dtype_float_holding_input,
+    _out_channels=graph._out_channels_same,
+    _in_channels=(None,),
+    _n_inputs=1,
+    _variable_input=False,
+    _attr_specs=tuple(json.loads(r"""[]""")),
+    _infer_meta=None,
+)
+
+exp2 = EngineOp(
+    meta=OpMeta(name="exp2", requires_2d=False, is_cfa=False, is_rgb=False),
+    _out_dtype=graph._out_dtype_float_holding_input,
+    _out_channels=graph._out_channels_same,
+    _in_channels=(None,),
+    _n_inputs=1,
+    _variable_input=False,
+    _attr_specs=tuple(json.loads(r"""[]""")),
+    _infer_meta=None,
+)
+
+expm1 = EngineOp(
+    meta=OpMeta(name="expm1", requires_2d=False, is_cfa=False, is_rgb=False),
+    _out_dtype=graph._out_dtype_float_holding_input,
+    _out_channels=graph._out_channels_same,
+    _in_channels=(None,),
+    _n_inputs=1,
+    _variable_input=False,
+    _attr_specs=tuple(json.loads(r"""[]""")),
+    _infer_meta=None,
+)
+
+log = EngineOp(
+    meta=OpMeta(name="log", requires_2d=False, is_cfa=False, is_rgb=False),
+    _out_dtype=graph._out_dtype_float_holding_input,
+    _out_channels=graph._out_channels_same,
+    _in_channels=(None,),
+    _n_inputs=1,
+    _variable_input=False,
+    _attr_specs=tuple(json.loads(r"""[]""")),
+    _infer_meta=None,
+)
+
+log2 = EngineOp(
+    meta=OpMeta(name="log2", requires_2d=False, is_cfa=False, is_rgb=False),
+    _out_dtype=graph._out_dtype_float_holding_input,
+    _out_channels=graph._out_channels_same,
+    _in_channels=(None,),
+    _n_inputs=1,
+    _variable_input=False,
+    _attr_specs=tuple(json.loads(r"""[]""")),
+    _infer_meta=None,
+)
+
+log10 = EngineOp(
+    meta=OpMeta(name="log10", requires_2d=False, is_cfa=False, is_rgb=False),
+    _out_dtype=graph._out_dtype_float_holding_input,
+    _out_channels=graph._out_channels_same,
+    _in_channels=(None,),
+    _n_inputs=1,
+    _variable_input=False,
+    _attr_specs=tuple(json.loads(r"""[]""")),
+    _infer_meta=None,
+)
+
+log1p = EngineOp(
+    meta=OpMeta(name="log1p", requires_2d=False, is_cfa=False, is_rgb=False),
+    _out_dtype=graph._out_dtype_float_holding_input,
+    _out_channels=graph._out_channels_same,
+    _in_channels=(None,),
+    _n_inputs=1,
+    _variable_input=False,
+    _attr_specs=tuple(json.loads(r"""[]""")),
+    _infer_meta=None,
+)
+
 rint = EngineOp(
     meta=OpMeta(name="rint", requires_2d=False, is_cfa=False, is_rgb=False),
     _out_dtype=graph._out_dtype_float_holding_input,
@@ -1775,6 +1852,13 @@ OPS_BY_NAME = {
     "arcsin": arcsin,
     "arccos": arccos,
     "arctan": arctan,
+    "exp": exp,
+    "exp2": exp2,
+    "expm1": expm1,
+    "log": log,
+    "log2": log2,
+    "log10": log10,
+    "log1p": log1p,
     "rint": rint,
     "floor": floor,
     "ceil": ceil,
@@ -1838,10 +1922,17 @@ __all__ = [
     "cos",
     "div_scalar",
     "divide",
+    "exp",
+    "exp2",
+    "expm1",
     "fill",
     "floor",
     "hypot",
     "left_shift",
+    "log",
+    "log10",
+    "log1p",
+    "log2",
     "logical_and",
     "logical_not",
     "logical_or",

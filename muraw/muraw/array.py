@@ -465,6 +465,55 @@ def arctan(x: ArrayLike) -> "Array":
 atan = arctan
 
 
+def exp(x: ArrayLike) -> "Array":
+    """NumPy's ``exp``. ``+inf`` gives inf, ``-inf`` gives 0, and a NaN
+    stays NaN. A bool or uint8 input gives float16, and a uint16 input
+    gives float32."""
+    return _float_unary("exp", x)
+
+
+def exp2(x: ArrayLike) -> "Array":
+    """NumPy's ``exp2``. An integer sample is that power of two, until it
+    overflows. A bool or uint8 input gives float16, and a uint16 input
+    gives float32."""
+    return _float_unary("exp2", x)
+
+
+def expm1(x: ArrayLike) -> "Array":
+    """NumPy's ``expm1``: ``exp(x) - 1``, accurate for a small ``x``.
+    ``-inf`` gives -1. A bool or uint8 input gives float16, and a uint16
+    input gives float32."""
+    return _float_unary("expm1", x)
+
+
+def log(x: ArrayLike) -> "Array":
+    """NumPy's ``log``, the natural logarithm. A negative sample is NaN,
+    and 0 gives ``-inf``. A bool or uint8 input gives float16, and a
+    uint16 input gives float32."""
+    return _float_unary("log", x)
+
+
+def log2(x: ArrayLike) -> "Array":
+    """NumPy's ``log2``. A positive power of two is that integer. A
+    negative sample is NaN, and 0 gives ``-inf``. A bool or uint8 input
+    gives float16, and a uint16 input gives float32."""
+    return _float_unary("log2", x)
+
+
+def log10(x: ArrayLike) -> "Array":
+    """NumPy's ``log10``. A negative sample is NaN, and 0 gives ``-inf``.
+    A bool or uint8 input gives float16, and a uint16 input gives
+    float32."""
+    return _float_unary("log10", x)
+
+
+def log1p(x: ArrayLike) -> "Array":
+    """NumPy's ``log1p``: ``log(1 + x)``, accurate for a small ``x``.
+    ``-1`` gives ``-inf``, and a sample below ``-1`` is NaN. A bool or
+    uint8 input gives float16, and a uint16 input gives float32."""
+    return _float_unary("log1p", x)
+
+
 def arctan2(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
     """NumPy's ``arctan2`` and ``atan2``: the signed angle in radians, in
     ``[-pi, pi]``, from the positive x-axis to ``(x2, x1)``, broadcast. A
