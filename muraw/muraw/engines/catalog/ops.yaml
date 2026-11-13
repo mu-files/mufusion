@@ -353,6 +353,18 @@ ops:
         dtype: float_holding_input
     attrs: []
 
+  # The cube root of each sample. A negative sample keeps its sign, so
+  # the cube root of -8 is -2. -0 gives -0. An infinity keeps its sign,
+  # and a NaN stays NaN. A float16 or float32 input keeps its dtype. A
+  # bool or uint8 input gives float16, and a uint16 input gives float32.
+  - name: cbrt
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
   # The sine of each sample, with the angle in radians. An infinite sample
   # is NaN. A float16 or float32 input keeps its dtype. A bool or uint8
   # input gives float16, and a uint16 input gives float32.

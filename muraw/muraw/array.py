@@ -418,6 +418,13 @@ def sqrt(x: ArrayLike) -> "Array":
     return _float_unary("sqrt", x)
 
 
+def cbrt(x: ArrayLike) -> "Array":
+    """NumPy's ``cbrt``, the cube root. A negative sample keeps its sign,
+    so ``cbrt(-8)`` is -2, and ``-0`` stays ``-0``. A bool or uint8 input
+    gives float16, and a uint16 input gives float32."""
+    return _float_unary("cbrt", x)
+
+
 def sin(x: ArrayLike) -> "Array":
     """NumPy's ``sin``, with the angle in radians. A bool or uint8 input
     gives float16, and a uint16 input gives float32."""

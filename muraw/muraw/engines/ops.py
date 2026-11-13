@@ -295,6 +295,17 @@ sqrt = EngineOp(
     _infer_meta=None,
 )
 
+cbrt = EngineOp(
+    meta=OpMeta(name="cbrt", requires_2d=False, is_cfa=False, is_rgb=False),
+    _out_dtype=graph._out_dtype_float_holding_input,
+    _out_channels=graph._out_channels_same,
+    _in_channels=(None,),
+    _n_inputs=1,
+    _variable_input=False,
+    _attr_specs=tuple(json.loads(r"""[]""")),
+    _infer_meta=None,
+)
+
 sin = EngineOp(
     meta=OpMeta(name="sin", requires_2d=False, is_cfa=False, is_rgb=False),
     _out_dtype=graph._out_dtype_float_holding_input,
@@ -1846,6 +1857,7 @@ OPS_BY_NAME = {
     "right_shift": right_shift,
     "bitwise_count": bitwise_count,
     "sqrt": sqrt,
+    "cbrt": cbrt,
     "sin": sin,
     "cos": cos,
     "tan": tan,
@@ -1913,6 +1925,7 @@ __all__ = [
     "bitwise_or",
     "bitwise_xor",
     "cast_dtype",
+    "cbrt",
     "ceil",
     "cfa_demosaic",
     "cfa_fix_bad_pixels_constant",
