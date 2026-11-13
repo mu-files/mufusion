@@ -195,6 +195,40 @@ ops:
         count: 1
         optional: true
 
+  # The smaller of each sample and value. The result has the input's dtype.
+  # A NaN on either side gives NaN. The minimum of +0 and -0 is -0.
+  - name: minimum_scalar
+    needs_frame_index: true
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs:
+      - key: value
+        type: f32_array
+        count: 0
+      - key: per_frame
+        type: bool
+        count: 1
+        optional: true
+
+  # The larger of each sample and value. The result has the input's dtype.
+  # A NaN on either side gives NaN. The maximum of +0 and -0 is +0.
+  - name: maximum_scalar
+    needs_frame_index: true
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs:
+      - key: value
+        type: f32_array
+        count: 0
+      - key: per_frame
+        type: bool
+        count: 1
+        optional: true
+
   # Arithmetic between two arrays of one dtype: a + b, a - b, a * b,
   # a / b. The inputs broadcast as in NumPy: each input's frames, rows,
   # columns, and channels match the output's, or are 1 and are read at
@@ -249,6 +283,32 @@ ops:
   # an infinite dividend over a finite divisor are NaN, and -0 keeps its
   # sign.
   - name: floor_divide
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: broadcast
+    attrs: []
+
+  # The smaller of each pair, broadcast as add is. The result has the
+  # inputs' dtype. A NaN on either side gives NaN. The minimum of +0 and
+  # -0 is -0.
+  - name: minimum
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: broadcast
+    attrs: []
+
+  # The larger of each pair, broadcast as add is. The result has the
+  # inputs' dtype. A NaN on either side gives NaN. The maximum of +0 and
+  # -0 is +0.
+  - name: maximum
     needs_frame_index: true
     inputs:
       - channels: any
@@ -587,6 +647,26 @@ ops:
   # Each sample rounded toward zero. The result has the input's dtype. A
   # bool or integer sample is unchanged, and trunc of -0 is -0.
   - name: trunc
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs: []
+
+  # The absolute value of each sample. The result has the input's dtype.
+  # A bool or integer sample is unchanged. -0 becomes +0, and a NaN stays
+  # a NaN.
+  - name: abs
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs: []
+
+  # Each sample with its sign flipped. The result has the input's dtype.
+  # +0 becomes -0 and -0 becomes +0. A NaN keeps a flipped sign bit. An
+  # integer result saturates, so a uint8 or uint16 sample becomes 0.
+  - name: negative
     inputs:
       - channels: any
     outputs:

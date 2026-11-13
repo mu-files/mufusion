@@ -570,6 +570,119 @@ def trunc(x: ArrayLike) -> "Array":
     return _copy_integral_unary("trunc", x)
 
 
+def abs(x: ArrayLike) -> "Array":
+    """NumPy's ``abs``. The result has ``x``'s dtype. A bool or integer
+    array is returned unchanged. ``-0`` becomes ``+0``, and a NaN stays
+    a NaN."""
+    return _copy_integral_unary("abs", x)
+
+
+absolute = abs
+
+
+def negative(x: ArrayLike) -> "Array":
+    """NumPy's ``negative``, the unary ``-``. The result has ``x``'s dtype.
+    ``+0`` becomes ``-0`` and ``-0`` becomes ``+0``. A uint8 or uint16
+    result saturates, so every sample is 0, where NumPy wraps. A bool
+    raises ``TypeError``."""
+    if not isinstance(x, Array):
+        x = Array(np.asarray(x))
+    if _is_bool(x.dtype):
+        raise TypeError(
+            "boolean negative, the `-` operator, is not supported, use "
+            "the `~` operator or the logical_not function instead"
+        )
+    from .engines.graph import op
+
+    return op("negative", x)
+
+
+def minimum(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
+    """NumPy's ``minimum``, broadcast. The result has the inputs' dtype.
+    A NaN on either side gives NaN, and the minimum of ``+0`` and ``-0``
+    is ``-0``. NumPy's float16 result returns the first zero instead. A Python float beside an integer array is float32, where
+    NumPy gives float64. A Python integer that does not fit an unsigned
+    array raises ``OverflowError``."""
+    return _arithmetic_function(_minimum, x1, x2)
+
+
+def maximum(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
+    """NumPy's ``maximum``, broadcast. The result has the inputs' dtype.
+    A NaN on either side gives NaN, and the maximum of ``+0`` and ``-0``
+    is ``+0``. NumPy's float16 result returns the first zero instead. A Python float beside an integer array is float32, where
+    NumPy gives float64. A Python integer that does not fit an unsigned
+    array raises ``OverflowError``."""
+    return _arithmetic_function(_maximum, x1, x2)
+
+
+def _minimum(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
+    if isinstance(x1, Array):
+        return x1._scalar_op("minimum_scalar", x2)
+    return x2._scalar_op("minimum_scalar", x1)
+
+
+def _maximum(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
+    if isinstance(x1, Array):
+        return x1._scalar_op("maximum_scalar", x2)
+    return x2._scalar_op("maximum_scalar", x1)
+
+
+_MISSING = object()
+
+
+def clip(
+    x: ArrayLike,
+    a_min: Any = _MISSING,
+    a_max: Any = _MISSING,
+    out: Any = None,
+    *,
+    min: Any = _MISSING,
+    max: Any = _MISSING,
+) -> "Array":
+    """NumPy's ``clip``. Values below ``a_min`` become ``a_min``, and
+    values above ``a_max`` become ``a_max``. ``None`` skips that edge.
+    When ``a_min`` is greater than ``a_max``, the result is ``a_max``.
+
+    A Python integer at or outside an unsigned dtype's range is no bound
+    on that edge, as NumPy does. A Python float beside an integer array
+    is float32, where NumPy gives float64. ``out`` is not supported;
+    ``realize(out=)`` writes the result. A lower bound of ``+0`` turns
+    ``-0`` into ``+0``, where NumPy's clip keeps ``-0``, because the
+    result is ``maximum`` then ``minimum``.
+    """
+    if out is not None:
+        raise NotImplementedError(
+            "clip out= is not supported; realize(out=) writes the result"
+        )
+    if a_min is _MISSING and a_max is _MISSING:
+        a_min = None if min is _MISSING else min
+        a_max = None if max is _MISSING else max
+    elif a_min is _MISSING:
+        raise TypeError("clip() missing 1 required positional argument: 'a_min'")
+    elif a_max is _MISSING:
+        raise TypeError("clip() missing 1 required positional argument: 'a_max'")
+    elif min is not _MISSING or max is not _MISSING:
+        raise ValueError(
+            "Passing `min` or `max` keyword argument when "
+            "`a_min` and `a_max` are provided is forbidden."
+        )
+    if not isinstance(x, Array):
+        x = Array(np.asarray(x))
+    if _is_integer(x.dtype):
+        info = np.iinfo(x.dtype)
+        if type(a_min) is int and a_min <= int(info.min):
+            a_min = None
+        if type(a_max) is int and a_max >= int(info.max):
+            a_max = None
+    if a_min is None and a_max is None:
+        return x
+    if a_min is not None:
+        x = maximum(x, a_min)
+    if a_max is not None:
+        x = minimum(x, a_max)
+    return x
+
+
 def rint(x: ArrayLike) -> "Array":
     """NumPy's ``rint``. Each sample rounds to the nearest integer, and a
     half rounds to the even integer. A float keeps its dtype. A bool or
@@ -801,6 +914,8 @@ _ELEMENTWISE_OPS = {
     "mul_scalar": "multiply",
     "div_scalar": "divide",
     "floor_div_scalar": "floor_divide",
+    "minimum_scalar": "minimum",
+    "maximum_scalar": "maximum",
 }
 
 
@@ -1014,9 +1129,9 @@ def _logical_binary(name: str, x1: Any, x2: Any) -> "Array":
 def _bool_arithmetic(array: "Array", name: str, other: Any, reverse: bool) -> "Array":
     """A bool and a numeric operand, promoted to that number's dtype.
 
-    ``-`` of two bools raises ``TypeError``. ``+`` of two bools is
-    ``logical_or`` and ``*`` is ``logical_and``. A result dtype an Array
-    does not store is ``NotImplementedError``.
+    ``-`` of two bools raises ``TypeError``. ``+`` and ``maximum`` of two
+    bools are ``logical_or``. ``*`` and ``minimum`` are ``logical_and``.
+    A result dtype an Array does not store is ``NotImplementedError``.
     """
     other_is_bool = _operand_is_bool(other)
     self_is_bool = _is_bool(array.dtype)
@@ -1032,6 +1147,10 @@ def _bool_arithmetic(array: "Array", name: str, other: Any, reverse: bool) -> "A
             return _logical_binary("logical_or", left, right)
         if name == "mul_scalar":
             return _logical_binary("logical_and", left, right)
+        if name == "minimum_scalar":
+            return _logical_binary("logical_and", left, right)
+        if name == "maximum_scalar":
+            return _logical_binary("logical_or", left, right)
         raise NotImplementedError(f"{name} of two bools is not supported")
     if self_is_bool:
         result = np.result_type(array.dtype, np.asarray(other).dtype)
@@ -1098,6 +1217,10 @@ def _elementwise(name: str, first: "Array", second: "Array") -> "Array":
             return op("logical_or", first, second)
         if name == "multiply":
             return op("logical_and", first, second)
+        if name == "minimum":
+            return op("logical_and", first, second)
+        if name == "maximum":
+            return op("logical_or", first, second)
         raise NotImplementedError(f"{name} of two bools is not supported")
     dtype = supported_dtype(np.result_type(first.dtype, second.dtype))
     return op(name, first.astype(dtype), second.astype(dtype))
@@ -3222,6 +3345,21 @@ class Array:
             dtype = self.dtype
             if _is_integer(dtype) and const.dtype.kind == "f":
                 dtype = np.dtype(np.float32)
+            elif (
+                name in ("minimum_scalar", "maximum_scalar")
+                and _is_integer(dtype)
+                and const.dtype.kind in "iu"
+            ):
+                if type(other) is int:
+                    info = np.iinfo(self.dtype)
+                    if other < int(info.min) or other > int(info.max):
+                        raise OverflowError(
+                            f"Python integer {other} out of bounds for {self.dtype.name}"
+                        )
+                else:
+                    promoted = np.result_type(self.dtype, const.dtype)
+                    if promoted != self.dtype:
+                        dtype = supported_dtype(promoted)
             if (
                 name == "floor_div_scalar"
                 and _is_integer(self.dtype)
@@ -3255,12 +3393,7 @@ class Array:
         return _elementwise(_ELEMENTWISE_OPS[name], first, second)
 
     def __neg__(self) -> "Array":
-        if _is_bool(self.dtype):
-            raise TypeError(
-                "boolean negative, the `-` operator, is not supported, use "
-                "the `~` operator or the logical_not function instead"
-            )
-        return NotImplemented
+        return negative(self)
 
     def __add__(self, other: ArithmeticOperand) -> "Array":
         return self._scalar_op("add_scalar", other)
