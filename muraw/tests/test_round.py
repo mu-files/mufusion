@@ -1,4 +1,4 @@
-"""round, rint, floor, and ceil against NumPy."""
+"""round, rint, floor, ceil, and trunc against NumPy."""
 
 from __future__ import annotations
 
@@ -46,11 +46,18 @@ def _ceil(lib, src):
     return lib.ceil(src)
 
 
+def _trunc(lib, src):
+    """``src`` rounded toward zero."""
+    return lib.trunc(src)
+
+
 def _directed_count(lib, dtype, toward):
     """``toward`` of ``0 .. 15``."""
     values = lib.arange(16, dtype=dtype).reshape(4, 4)
     if toward == "floor":
         return lib.floor(values)
+    if toward == "trunc":
+        return lib.trunc(values)
     return lib.ceil(values)
 
 
@@ -189,8 +196,19 @@ def test_ceil_matches_numpy(dtype):
     _sign_bits(realized, want)
 
 
+@pytest.mark.parametrize("dtype", ["float16", "float32"])
+def test_trunc_matches_numpy(dtype):
+    src = _edges(dtype)
+    got = _trunc(mi, mi.Array(src))
+    want = _trunc(np, src)
+    assert got.dtype == want.dtype
+    realized = got.realize()
+    np.testing.assert_allclose(realized, want, rtol=0, atol=0, equal_nan=True)
+    _sign_bits(realized, want)
+
+
 @pytest.mark.parametrize("dtype", ["uint8", "uint16"])
-@pytest.mark.parametrize("toward", ["floor", "ceil"])
+@pytest.mark.parametrize("toward", ["floor", "ceil", "trunc"])
 def test_floor_and_ceil_of_integers_keep_the_dtype(dtype, toward):
     got = _directed_count(mi, dtype, toward)
     want = _directed_count(np, dtype, toward)
@@ -198,9 +216,9 @@ def test_floor_and_ceil_of_integers_keep_the_dtype(dtype, toward):
     np.testing.assert_array_equal(got.realize(), want)
 
 
-def test_rint_floor_ceil_and_round_of_bool_match_numpy():
+def test_rint_floor_ceil_trunc_and_round_of_bool_match_numpy():
     src = np.array([[False, True, False], [True, True, False]])
-    for helper in (_rint, _floor, _ceil, _round):
+    for helper in (_rint, _floor, _ceil, _trunc, _round):
         got = helper(mi, mi.Array(src))
         want = helper(np, src)
         assert got.dtype == want.dtype

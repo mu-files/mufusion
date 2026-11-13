@@ -412,6 +412,14 @@ def divide(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
     return _arithmetic_function(operator.truediv, x1, x2)
 
 
+def floor_divide(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
+    """NumPy's ``floor_divide``: ``x1 // x2``, the quotient toward negative
+    infinity, broadcast. The result has the inputs' dtype. An integer
+    division by zero is 0. A Python float beside an integer array is
+    float32, where NumPy gives float64."""
+    return _arithmetic_function(operator.floordiv, x1, x2)
+
+
 def sqrt(x: ArrayLike) -> "Array":
     """NumPy's ``sqrt``. A negative float is NaN. A bool or uint8 input
     gives float16, and a uint16 input gives float32."""
@@ -546,25 +554,20 @@ atan2 = arctan2
 def ceil(x: ArrayLike) -> "Array":
     """NumPy's ``ceil``. Each sample rounds toward positive infinity. The
     result has ``x``'s dtype. A bool or integer array is returned unchanged."""
-    if not isinstance(x, Array):
-        x = Array(np.asarray(x))
-    if x.dtype.kind != "f":
-        return x
-    from .engines.graph import op
-
-    return op("ceil", x)
+    return _copy_integral_unary("ceil", x)
 
 
 def floor(x: ArrayLike) -> "Array":
     """NumPy's ``floor``. Each sample rounds toward negative infinity. The
     result has ``x``'s dtype. A bool or integer array is returned unchanged."""
-    if not isinstance(x, Array):
-        x = Array(np.asarray(x))
-    if x.dtype.kind != "f":
-        return x
-    from .engines.graph import op
+    return _copy_integral_unary("floor", x)
 
-    return op("floor", x)
+
+def trunc(x: ArrayLike) -> "Array":
+    """NumPy's ``trunc``. Each sample rounds toward zero. The result has
+    ``x``'s dtype. A bool or integer array is returned unchanged, and
+    ``trunc(-0)`` stays ``-0``."""
+    return _copy_integral_unary("trunc", x)
 
 
 def rint(x: ArrayLike) -> "Array":
@@ -797,6 +800,7 @@ _ELEMENTWISE_OPS = {
     "sub_scalar": "subtract",
     "mul_scalar": "multiply",
     "div_scalar": "divide",
+    "floor_div_scalar": "floor_divide",
 }
 
 
@@ -899,6 +903,17 @@ def _float_unary(name: str, x: ArrayLike) -> "Array":
 
     if not isinstance(x, Array):
         x = Array(np.asarray(x))
+    return op(name, x)
+
+
+def _copy_integral_unary(name: str, x: ArrayLike) -> "Array":
+    """``name`` of ``x``. A bool or integer array is returned unchanged."""
+    from .engines.graph import op
+
+    if not isinstance(x, Array):
+        x = Array(np.asarray(x))
+    if x.dtype.kind != "f":
+        return x
     return op(name, x)
 
 
@@ -3188,8 +3203,9 @@ class Array:
 
         A constant keeps an integer array's dtype when its values are
         integers. A float constant makes an integer array float32. ``/``
-        reads an integer array as it is and writes float32. Integer results
-        saturate instead of wrapping.
+        reads an integer array as it is and writes float32. ``//`` of an
+        unsigned array rejects an integer that does not fit that dtype.
+        Integer results saturate instead of wrapping.
         """
         from .engines.graph import op
 
@@ -3206,6 +3222,18 @@ class Array:
             dtype = self.dtype
             if _is_integer(dtype) and const.dtype.kind == "f":
                 dtype = np.dtype(np.float32)
+            if (
+                name == "floor_div_scalar"
+                and _is_integer(self.dtype)
+                and const.dtype.kind in "iu"
+            ):
+                limit = int(np.iinfo(self.dtype).max)
+                for value in np.asarray(const).reshape(-1):
+                    as_int = int(value)
+                    if as_int < 0 or as_int > limit:
+                        raise OverflowError(
+                            f"Python integer {as_int} out of bounds for {self.dtype.name}"
+                        )
             scalar = _scalar_values(self._meta, const)
             if scalar is not None:
                 values, per_frame = scalar
@@ -3257,6 +3285,12 @@ class Array:
 
     def __rtruediv__(self, other: ArithmeticOperand) -> "Array":
         return self._scalar_op("div_scalar", other, reverse=True)
+
+    def __floordiv__(self, other: ArithmeticOperand) -> "Array":
+        return self._scalar_op("floor_div_scalar", other)
+
+    def __rfloordiv__(self, other: ArithmeticOperand) -> "Array":
+        return self._scalar_op("floor_div_scalar", other, reverse=True)
 
     def __matmul__(self, other: ArrayLike | Sequence[Any]) -> "Array":
         return matmul(self, other)

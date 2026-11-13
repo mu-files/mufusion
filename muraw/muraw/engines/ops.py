@@ -119,6 +119,37 @@ div_scalar = EngineOp(
     _infer_meta=None,
 )
 
+floor_div_scalar = EngineOp(
+    meta=OpMeta(name="floor_div_scalar", requires_2d=False, is_cfa=False, is_rgb=False),
+    _out_dtype=graph._out_dtype_same,
+    _out_channels=graph._out_channels_same,
+    _in_channels=(None,),
+    _n_inputs=1,
+    _variable_input=False,
+    _attr_specs=tuple(
+        json.loads(r"""[
+  {
+    "count": 0,
+    "key": "value",
+    "type": "f32_array"
+  },
+  {
+    "count": 1,
+    "key": "per_frame",
+    "optional": true,
+    "type": "bool"
+  },
+  {
+    "count": 1,
+    "key": "reverse",
+    "optional": true,
+    "type": "bool"
+  }
+]""")
+    ),
+    _infer_meta=None,
+)
+
 add = EngineOp(
     meta=OpMeta(name="add", requires_2d=False, is_cfa=False, is_rgb=False),
     _out_dtype=graph._out_dtype_same,
@@ -155,6 +186,17 @@ multiply = EngineOp(
 divide = EngineOp(
     meta=OpMeta(name="divide", requires_2d=False, is_cfa=False, is_rgb=False),
     _out_dtype=graph._out_dtype_float_of_input,
+    _out_channels=graph._out_channels_same,
+    _in_channels=(None, None),
+    _n_inputs=2,
+    _variable_input=False,
+    _attr_specs=tuple(json.loads(r"""[]""")),
+    _infer_meta=graph._out_meta_broadcast,
+)
+
+floor_divide = EngineOp(
+    meta=OpMeta(name="floor_divide", requires_2d=False, is_cfa=False, is_rgb=False),
+    _out_dtype=graph._out_dtype_same,
     _out_channels=graph._out_channels_same,
     _in_channels=(None, None),
     _n_inputs=2,
@@ -473,6 +515,17 @@ floor = EngineOp(
 
 ceil = EngineOp(
     meta=OpMeta(name="ceil", requires_2d=False, is_cfa=False, is_rgb=False),
+    _out_dtype=graph._out_dtype_same,
+    _out_channels=graph._out_channels_same,
+    _in_channels=(None,),
+    _n_inputs=1,
+    _variable_input=False,
+    _attr_specs=tuple(json.loads(r"""[]""")),
+    _infer_meta=None,
+)
+
+trunc = EngineOp(
+    meta=OpMeta(name="trunc", requires_2d=False, is_cfa=False, is_rgb=False),
     _out_dtype=graph._out_dtype_same,
     _out_channels=graph._out_channels_same,
     _in_channels=(None,),
@@ -1841,10 +1894,12 @@ OPS_BY_NAME = {
     "sub_scalar": sub_scalar,
     "mul_scalar": mul_scalar,
     "div_scalar": div_scalar,
+    "floor_div_scalar": floor_div_scalar,
     "add": add,
     "subtract": subtract,
     "multiply": multiply,
     "divide": divide,
+    "floor_divide": floor_divide,
     "logical_and": logical_and,
     "logical_or": logical_or,
     "logical_xor": logical_xor,
@@ -1874,6 +1929,7 @@ OPS_BY_NAME = {
     "rint": rint,
     "floor": floor,
     "ceil": ceil,
+    "trunc": trunc,
     "round": round,
     "hypot": hypot,
     "power": power,
@@ -1940,6 +1996,8 @@ __all__ = [
     "expm1",
     "fill",
     "floor",
+    "floor_div_scalar",
+    "floor_divide",
     "hypot",
     "left_shift",
     "log",
@@ -1981,6 +2039,7 @@ __all__ = [
     "tan",
     "tile",
     "transpose",
+    "trunc",
     "view",
     "warp_rectilinear",
 ]
