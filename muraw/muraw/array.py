@@ -907,6 +907,68 @@ def _matmul_matrix_first(matrix: np.ndarray, array: "Array") -> "Array":
     return _matmul_array_first(array, matrix.T)
 
 
+def _color_space_name(value: Any, key: str) -> str:
+    """``value`` as the ``key`` space name, or the catalog's rejection."""
+    from .engines.ops import OPS_BY_NAME
+
+    specs = OPS_BY_NAME["convert_colorspace"]._attr_specs
+    allowed = next(spec["values"] for spec in specs if spec["key"] == key)
+    if not isinstance(value, str):
+        raise TypeError(f"attr {key!r} must be a str")
+    if value not in allowed:
+        raise ValueError(f"attr {key!r} must be one of {list(allowed)}, got {value!r}")
+    return value
+
+
+def convert_colorspace(image: ArrayLike, fromspace: str, tospace: str) -> "Array":
+    """Convert ``image`` from ``fromspace`` to ``tospace``.
+
+    ``mi.convert_colorspace(x, "RGB", "GRAY")``. The names are ``RGB``,
+    ``GRAY``, ``YUV``, ``YCrCb``, ``HSV``, and ``HLS``. The result has
+    ``image``'s dtype. The same name on both sides returns ``image``,
+    with no node.
+
+    RGB to gray drops the channel axis::
+
+        Y = 0.299 R + 0.587 G + 0.114 B
+
+    An ``(H, W, 3)`` or ``(3, H, W)`` image becomes ``(H, W)``, and a
+    stack ``(N, H, W, 3)`` becomes ``(N, H, W)``. Gray to RGB writes
+    that channel into R, G, and B, so an ``(H, W)`` image becomes
+    ``(H, W, 3)``. It is not an inverse of the weights. ``(H, W, 1)``
+    and ``(1, H, W)`` are the same gray input.
+
+    The sum is computed in float32. An integer result rounds to nearest,
+    half away from zero, and saturates. A float16 result is that float32
+    value rounded to float16. ``uint8``, ``uint16``, ``float16``, and
+    ``float32`` run. A bool raises ``NotImplementedError``.
+
+    YUV, YCrCb, HSV, and HLS are named and not computed yet.
+    """
+    from .engines.graph import op
+
+    src = _color_space_name(fromspace, "fromspace")
+    dst = _color_space_name(tospace, "tospace")
+    array = image if isinstance(image, Array) else Array(np.asarray(image))
+    if src == dst:
+        return array
+    if _is_bool(array.dtype):
+        raise NotImplementedError(
+            "convert_colorspace of a bool array is not supported; "
+            "the dtypes are uint8, uint16, float16, and float32"
+        )
+    # The engine reads axis 0 of a 3-axis array as frames, so a
+    # channels-first RGB image is moved to channels last before the node.
+    if (
+        src == "RGB"
+        and array.meta.ndim == 3
+        and array.meta.channel_axis == 0
+        and array.meta.channels == 3
+    ):
+        array = moveaxis(array, 0, -1)
+    return op("convert_colorspace", array, fromspace=src, tospace=dst)
+
+
 # The scalar op and the op between two arrays for each operator.
 _ELEMENTWISE_OPS = {
     "add_scalar": "add",

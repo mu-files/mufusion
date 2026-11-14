@@ -84,6 +84,13 @@ enums:
     - bilinear
     - ea
     - ea_fast
+  color_space:
+    - RGB
+    - GRAY
+    - YUV
+    - YCrCb
+    - HSV
+    - HLS
   gain_clamp:
     - none
     - max_one
@@ -1223,6 +1230,34 @@ ops:
       - key: columns
         type: i32
         count: 1
+
+  # Convert between the color spaces named by fromspace and tospace.
+  # RGB to GRAY drops the channel axis:
+  #   Y = 0.299 R + 0.587 G + 0.114 B
+  # An (H, W, 3) or (3, H, W) image becomes (H, W). A stack
+  # (N, H, W, 3) becomes (N, H, W). GRAY to RGB writes that channel
+  # into R, G, and B, a copy of the sample, so an (H, W) image becomes
+  # (H, W, 3). It is not an inverse of those weights. A one-channel
+  # image, (H, W, 1) or (1, H, W), is the same gray input.
+  # The result has the input's dtype. RGB to GRAY computes the sum in
+  # float32. An integer result rounds to nearest, half away from zero,
+  # and saturates. A float16 result is that float32 value rounded to
+  # float16. The same space is not a node: the caller returns the
+  # input. YUV, YCrCb, HSV, and HLS are named and not computed yet.
+  - name: convert_colorspace
+    inputs:
+      - channels: any
+    outputs:
+      - geometry: convert_colorspace
+    attrs:
+      - key: fromspace
+        type: string
+        count: 1
+        enum: color_space
+      - key: tospace
+        type: string
+        count: 1
+        enum: color_space
 
   - name: rgb_matrix_3x3
     is_rgb: true

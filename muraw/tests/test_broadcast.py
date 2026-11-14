@@ -102,6 +102,20 @@ def test_sliced_broadcast_matches_numpy():
     np.testing.assert_array_equal(array.realize(), stretched)
 
 
+def _packed(lib, gray):
+    """One gray sample stored as R, G, and B."""
+    return lib.broadcast_to(gray[..., None], (*gray.shape, 3))
+
+
+@pytest.mark.parametrize("dtype", ["uint8", "uint16", "float16", "float32"])
+def test_broadcast_to_packs_one_channel(dtype):
+    gray = np.arange(24, dtype=np.float32).reshape(4, 6).astype(dtype)
+    got = _packed(mi, mi.Array(gray)).realize()
+    np.testing.assert_array_equal(got, _packed(np, gray))
+    assert got.flags.c_contiguous
+    assert not np.shares_memory(got, gray)
+
+
 def test_row_and_column_repeats_run_the_tile_kernel():
     from muraw.common import PerfTimer
     from muraw.engines.graph import EngineTiming, engine_timing, set_engine_timing

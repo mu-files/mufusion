@@ -715,6 +715,62 @@ def _out_meta_broadcast(x: Array, attrs: Dict[str, Any], *more: Array) -> ArrayM
     return _meta_from_shape(shape, x.dtype, x.meta.channel_axis)
 
 
+def _convert_colorspace_channels(src: str) -> int:
+    """The channel count ``src`` reads. ``src`` is ``RGB`` or ``GRAY``."""
+    if src == "RGB":
+        return 3
+    return 1
+
+
+def _kept_placement(meta: ArrayMeta, x: Array) -> ArrayMeta:
+    """``meta`` with the origin, canvas, and ``oob_valid`` of ``x``."""
+    return meta.copy(
+        origin=x.meta.origin, canvas=x.meta.canvas, oob_valid=x.meta.oob_valid
+    )
+
+
+def _out_meta_convert_colorspace(x: Array, attrs: Dict[str, Any]) -> ArrayMeta:
+    """Geometry policy ``convert_colorspace``.
+
+    RGB to gray drops the channel axis: an ``(H, W, 3)`` image becomes
+    ``(H, W)``, and a stack ``(N, H, W, 3)`` becomes ``(N, H, W)`` with
+    its frames on axis 0. Gray to RGB writes three channels last. The
+    rows, columns, origin, and canvas stay. A pair other than those two
+    raises ``NotImplementedError``.
+    """
+    src = attrs["fromspace"]
+    dst = attrs["tospace"]
+    if x.meta.is_1d:
+        raise NotImplementedError(
+            f"convert_colorspace of shape {x.shape} is not supported; "
+            "pass an (H, W) image or one with a channel axis"
+        )
+    if (src, dst) not in (("RGB", "GRAY"), ("GRAY", "RGB")):
+        raise NotImplementedError(
+            f"convert_colorspace from {src} to {dst} is not supported yet"
+        )
+    need = _convert_colorspace_channels(src)
+    if x.meta.channels != need:
+        noun = "channel" if need == 1 else "channels"
+        raise NotImplementedError(
+            f"convert_colorspace from {src} reads {need} {noun}, got {x.meta.channels}"
+        )
+    if src == "RGB":
+        if x.meta.ndim == 4:
+            meta = _meta_from_shape(
+                (x.meta.frames, x.meta.height, x.meta.width), x.dtype, 0
+            )
+            return _kept_placement(meta, x)
+        return x.meta.with_size(channels=1, ndim=2)
+    if x.meta.ndim == 3 and x.meta.channel_axis == 0:
+        meta = _meta_from_shape((x.meta.height, x.meta.width, 3), x.dtype, -1)
+        return _kept_placement(meta, x)
+    if x.meta.ndim == 2:
+        meta = _meta_from_shape((x.meta.height, x.meta.width, 3), x.dtype, -1)
+        return _kept_placement(meta, x)
+    return x.meta.with_size(channels=3)
+
+
 @dataclass(frozen=True)
 class OpNode:
     """A catalog engine op applied to ``inputs``."""
