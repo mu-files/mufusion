@@ -880,6 +880,16 @@ def _bool_arithmetic(array: "Array", name: str, other: Any, reverse: bool) -> "A
     )
 
 
+def _graph_op(name: str, x: "Array", /, *more: "Array", **attrs: Any) -> "Array":
+    """``engines.graph.op``. That module imports this one, so the first call
+    imports it and rebinds ``_graph_op`` to it."""
+    global _graph_op
+    from .engines.graph import op
+
+    _graph_op = op
+    return op(name, x, *more, **attrs)
+
+
 def _broadcast_pair(
     name: str, first: "Array", second: "Array"
 ) -> tuple["Array", "Array"]:
@@ -887,20 +897,21 @@ def _broadcast_pair(
 
     A missing leading axis becomes size 1. Both must be CHW, or both packed.
     """
-    shape = np.broadcast_shapes(first.shape, second.shape)
-    channel_axis = None
-    if len(shape) == 3:
-        channel_axis = next(
-            operand.meta.channel_axis
-            for operand in (first, second)
-            if operand.meta.ndim == 3
-        )
-    operands = []
-    for operand in (first, second):
-        padded = (1,) * (len(shape) - operand.meta.ndim) + operand.shape
-        operands.append(_reshape_layout(operand, padded, channel_axis))
-    first, second = operands
-    if spatial_reading(first.meta)[0] != spatial_reading(second.meta)[0]:
+    if first.shape != second.shape:
+        shape = np.broadcast_shapes(first.shape, second.shape)
+        channel_axis = None
+        if len(shape) == 3:
+            channel_axis = next(
+                operand.meta.channel_axis
+                for operand in (first, second)
+                if operand.meta.ndim == 3
+            )
+        operands = []
+        for operand in (first, second):
+            padded = (1,) * (len(shape) - operand.meta.ndim) + operand.shape
+            operands.append(_reshape_layout(operand, padded, channel_axis))
+        first, second = operands
+    if (first.meta.channel_axis == 0) != (second.meta.channel_axis == 0):
         raise NotImplementedError(
             f"{name} of shape {first.shape} with channel_axis {first.meta.channel_axis} "
             f"and shape {second.shape} with channel_axis {second.meta.channel_axis} "
@@ -913,8 +924,6 @@ def _elementwise(name: str, first: "Array", second: "Array") -> "Array":
     """The op ``name`` between two arrays, with NumPy's broadcasting and
     dtype promotion. Integer division gives float32.
     """
-    from .engines.graph import op
-
     first, second = _broadcast_pair(name, first, second)
     if _is_bool(first.dtype) and _is_bool(second.dtype):
         if name == "subtract":
@@ -924,12 +933,12 @@ def _elementwise(name: str, first: "Array", second: "Array") -> "Array":
                 "function instead"
             )
         if name == "add":
-            return op("logical_or", first, second)
+            return _graph_op("logical_or", first, second)
         if name == "multiply":
-            return op("logical_and", first, second)
+            return _graph_op("logical_and", first, second)
         raise NotImplementedError(f"{name} of two bools is not supported")
     dtype = supported_dtype(np.result_type(first.dtype, second.dtype))
-    return op(name, first.astype(dtype), second.astype(dtype))
+    return _graph_op(name, first.astype(dtype), second.astype(dtype))
 
 
 def _expand_pad(
@@ -3035,8 +3044,6 @@ class Array:
         reads an integer array as it is and writes float32. Integer results
         saturate instead of wrapping.
         """
-        from .engines.graph import op
-
         if _is_bool(self.dtype) or _operand_is_bool(other):
             return _bool_arithmetic(self, name, other, reverse)
 
@@ -3059,7 +3066,7 @@ class Array:
                 if reverse:
                     attrs["reverse"] = True
                 source = self if name == "div_scalar" else self.astype(dtype)
-                return op(name, source, **attrs)
+                return _graph_op(name, source, **attrs)
             channel_axis = (
                 self.meta.channel_axis if const.ndim == self.meta.ndim else None
             )

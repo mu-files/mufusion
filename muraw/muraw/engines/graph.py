@@ -19,6 +19,7 @@ from typing import (
     Dict,
     List,
     Mapping,
+    NamedTuple,
     Optional,
     Protocol,
     Tuple,
@@ -708,6 +709,8 @@ def _out_meta_broadcast(x: Array, attrs: Dict[str, Any], *more: Array) -> ArrayM
     whole canvas with ``x``'s channel axis when none does.
     """
     inputs = (x, *more)
+    if all(inp.shape == x.shape for inp in more):
+        return x.meta
     shape = np.broadcast_shapes(*(inp.shape for inp in inputs))
     for inp in inputs:
         if inp.shape == shape:
@@ -715,8 +718,7 @@ def _out_meta_broadcast(x: Array, attrs: Dict[str, Any], *more: Array) -> ArrayM
     return _meta_from_shape(shape, x.dtype, x.meta.channel_axis)
 
 
-@dataclass(frozen=True)
-class OpNode:
+class OpNode(NamedTuple):
     """A catalog engine op applied to ``inputs``."""
 
     op: str
@@ -732,18 +734,21 @@ def check_engine_layout(meta: ArrayMeta) -> None:
     first, ``(C, H, W)``, never on axis 1. A 4-axis stack is ``(N, H, W, C)``.
     An empty array is never sent to the engine, so it may have any layout.
     """
-    if meta.size == 0:
+    ndim = len(meta.shape)
+    if ndim < 3:
         return
-    if meta.ndim == 3 and meta.channel_axis == 1:
+    axis = meta.channel_axis
+    if (axis != 1 if ndim == 3 else axis == 3) or meta.size == 0:
+        return
+    if ndim == 3:
         raise NotImplementedError(
             f"shape {meta.shape} with channel_axis 1 is not supported; put the "
             "channels last, (H, W, C), or first, (C, H, W), with mi.moveaxis"
         )
-    if meta.ndim == 4 and meta.channel_axis != 3:
-        raise NotImplementedError(
-            f"shape {meta.shape} with channel_axis {meta.channel_axis} is not supported; "
-            "a 4-axis stack is (N, H, W, C)"
-        )
+    raise NotImplementedError(
+        f"shape {meta.shape} with channel_axis {axis} is not supported; "
+        "a 4-axis stack is (N, H, W, C)"
+    )
 
 
 def _check_input(
@@ -886,31 +891,38 @@ def emit(engine_op: EngineOp, x: Array, /, *more: Array, **attrs: Any) -> Array:
     for index, inp in enumerate(inputs):
         entry = min(index, len(engine_op._in_channels) - 1)
         _check_input(engine_op.meta, engine_op._in_channels[entry], inp, index)
-    coerced = _validate_attrs(name, engine_op._attr_specs, attrs)
+    if attrs or engine_op._attr_specs:
+        coerced = MappingProxyType(_validate_attrs(name, engine_op._attr_specs, attrs))
+    else:
+        coerced = _NO_ATTRS
     out_meta = engine_op.infer_out_meta(x, coerced, *more)
     check_engine_layout(out_meta)
-    if out_meta.size == 0:
+    if 0 in out_meta.shape:
         return _empty_array(out_meta)
-    empty = [index for index, inp in enumerate(inputs) if inp.meta.size == 0]
+    empty = [index for index, inp in enumerate(inputs) if 0 in inp.shape]
     if empty:
         raise NotImplementedError(
             f"op {name!r}: input {empty[0]} of shape {inputs[empty[0]].shape} is "
             f"empty and the result of shape {out_meta.shape} is not"
         )
-    node = OpNode(
-        op=name,
-        inputs=inputs,
-        attrs=MappingProxyType(coerced),
-        out_meta=out_meta,
-    )
-    return Array(_meta=out_meta, _node=node)
+    return Array(_meta=out_meta, _node=OpNode(name, inputs, coerced, out_meta))
+
+
+# The attrs of every node of an op that has none.
+_NO_ATTRS: Mapping[str, Any] = MappingProxyType({})
+
+# ``engines.ops`` imports this module, so ``op`` imports it on its first call.
+_ops_by_name: Optional[Mapping[str, EngineOp]] = None
 
 
 def op(name: str, x: Array, /, *more: Array, **attrs: Any) -> Array:
     """Emit a named engine op (thin alias over ``engines.ops.OPS_BY_NAME``)."""
-    from .ops import OPS_BY_NAME
+    global _ops_by_name
+    if _ops_by_name is None:
+        from .ops import OPS_BY_NAME
 
-    engine_op = OPS_BY_NAME.get(name)
+        _ops_by_name = OPS_BY_NAME
+    engine_op = _ops_by_name.get(name)
     if engine_op is None:
         raise ValueError(f"unknown engine op {name!r}")
     return emit(engine_op, x, *more, **attrs)

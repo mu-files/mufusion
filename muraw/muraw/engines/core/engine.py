@@ -8,6 +8,9 @@ from typing import TYPE_CHECKING, Any, Dict, List
 
 import numpy as np
 
+from ...common import PerfTimer
+from ..graph import EngineTiming, check_engine_layout, get_engine_timing
+
 if TYPE_CHECKING:
     from ...array import Array
     from ..graph import OpNode
@@ -75,19 +78,7 @@ class CoreEngine:
         ``output``, when given, is the buffer for ``root``. It already has
         ``root``'s buffer shape, dtype, and a layout this engine can bind.
         """
-        from ...common import PerfTimer
-        from ..graph import EngineTiming, check_engine_layout, get_engine_timing
         from . import _engine_load
-
-        unknown = sorted(
-            {
-                t._node.op
-                for t in nodes
-                if t._node is not None and t._node.op not in self.supported_ops
-            }
-        )
-        if unknown:
-            raise ValueError(f"CoreEngine does not support op(s): {unknown}")
 
         produced = {id(t) for t in nodes}
         input_arrays: List["Array"] = []
@@ -132,23 +123,25 @@ class CoreEngine:
                     "array has no node to run"
                 )
             origin_row, origin_col = m.origin
+            canvas_x0, canvas_y0, canvas_width, canvas_height = m.canvas
             # The engine reads a CHW array as frames on axis 0 with one
             # channel each, a 4-axis stack as frames on axis 0, and any
             # other array with its channels last.
-            desc = {
-                "id": id_of[id(t)],
-                "dtype": int(m.dtype.num),
-                "shape": list(m.buffer_shape),
-                "frame_axis": 0 if m.channel_axis == 0 or m.ndim == 4 else -1,
-                "origin_y": int(origin_row),
-                "origin_x": int(origin_col),
-                "canvas_x0": int(m.canvas[0]),
-                "canvas_y0": int(m.canvas[1]),
-                "canvas_width": int(m.canvas[2]),
-                "canvas_height": int(m.canvas[3]),
-                "oob_valid": bool(m.oob_valid),
-            }
-            array_descs.append(desc)
+            array_descs.append(
+                {
+                    "id": id_of[id(t)],
+                    "dtype": m.dtype.num,
+                    "shape": list(m.buffer_shape),
+                    "frame_axis": 0 if m.channel_axis == 0 or m.ndim == 4 else -1,
+                    "origin_y": origin_row,
+                    "origin_x": origin_col,
+                    "canvas_x0": canvas_x0,
+                    "canvas_y0": canvas_y0,
+                    "canvas_width": canvas_width,
+                    "canvas_height": canvas_height,
+                    "oob_valid": bool(m.oob_valid),
+                }
+            )
 
         graph_nodes = []
         for t in nodes:
