@@ -1,0 +1,27 @@
+---
+description: Run muraw's tests outside the sandbox, because the sandbox blocks Core Image
+alwaysApply: true
+---
+
+# Run muraw's tests outside the sandbox
+
+The agent's shell sandbox blocks the GPU, so Core Image cannot create a
+context there. Every Core Image test in muraw then fails: the render logs
+`Failed to create Core Image context`, falls back to the Python pipeline,
+and misses the Core Image comparison thresholds. The code is not at fault,
+and the same tests pass outside the sandbox.
+
+So run muraw's tests outside the sandbox from the start, with
+`required_permissions: ["all"]` on the shell call:
+
+- the whole muraw suite (`pytest muraw/tests`, or `pytest tests` from
+  `muraw/`);
+- any muraw test file or `-k` selection that can reach Core Image, such as
+  `test_dng_render.py`, `test_cli.py`, or anything with `coreimage` in its
+  name.
+
+A muraw test that fails with `Failed to create Core Image context` in its
+log was run in the sandbox. Rerun it outside the sandbox before reading
+anything into the failure, and do not report it as a failure of the change.
+
+The `mufusion` tests do not use Core Image and run in the sandbox.
