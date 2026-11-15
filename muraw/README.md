@@ -323,7 +323,7 @@ The test suite covers DNG reading, writing, rendering, metadata handling, and CL
 **Requires:** `pip install muraw[all]` (pytest is included in the `[all]` extra)
 
 ```bash
-cd /path/to/mu-image/muraw
+cd /path/to/mufusion/muraw
 venv/bin/pytest tests/
 ```
 

@@ -9,7 +9,7 @@ Image is a strict xfail that records the measured value. Every case
 writes what it measured into a table of where the renderers differ from
 the spec. The table goes to ``tests/test_outputs/`` on every run. When a
 run measured every case, it also goes to
-``reference_renderer_differences.md`` in the private mu-image-engine
+``reference_renderer_differences.md`` in the private mufusion-engine
 checkout next to this repo, under ``docs/staged/``, where the docs wait
 until they are published. A partial run, a machine without the reference
 renderers, or a machine without that folder leaves the document as it is.
@@ -61,7 +61,7 @@ from muraw.raw_render import (
 # Core Image returns an empty image below 256 x 256 pixels.
 HEIGHT = WIDTH = 256
 FULL = (0, 0, HEIGHT, WIDTH)
-STAGED_DOCS = Path(__file__).parents[3] / "mu-image-engine" / "docs" / "staged"
+STAGED_DOCS = Path(__file__).parents[3] / "mufusion-engine" / "docs" / "staged"
 DOC_PATH = STAGED_DOCS / "reference_renderer_differences.md"
 
 # What each list's stage holds: OpcodeList1 runs on the stored samples,
