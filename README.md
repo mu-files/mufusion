@@ -1,6 +1,6 @@
 ## High-performance image tools for Python
 
-[![CI](https://github.com/mu-files/mufusion/actions/workflows/publish.yml/badge.svg)](https://github.com/mu-files/mufusion/actions/workflows/publish.yml)
+[![CI](https://github.com/mu-files/mufusion/actions/workflows/ci.yml/badge.svg)](https://github.com/mu-files/mufusion/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-BSD--3--Clause-blue.svg)](LICENSE)
 
 `mufusion` is a cross-platform toolkit for software engineers who process

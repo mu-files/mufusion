@@ -1,205 +1,53 @@
-name: Build, Test, and Publish
+name: Publish
 
+# A v* tag publishes the files that ci.yml built and tested for the
+# tagged commit on main. Push the commit to main and wait for that run to
+# pass before pushing the tag. Its artifacts are kept for 90 days; an older
+# commit needs a new run of ci.yml on main first.
 on:
   push:
-    branches: [main, dev-branch]
     tags: ['v*']
-  pull_request:
-  workflow_dispatch:
 
 jobs:
-  lint:
-    name: Ruff
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install ruff
-        run: python -m pip install "ruff==0.17.0"
-
-      - name: Ruff check
-        run: ruff check
-
-      - name: Ruff format
-        run: ruff format --check
-
-  build-sdist:
-    name: Build source distributions
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install build tools
-        run: pip install build
-
-      # setuptools prints a deprecation as BuildBackendWarning and still
-      # exits 0. Fail the job so that warning is not only in the log.
-      - name: Build sdists
-        run: |
-          set -o pipefail
-          for project in mufusion muraw; do
-            (cd "$project" && python -m build --sdist --outdir ../dist 2>&1 | tee "$RUNNER_TEMP/sdist-$project.log")
-            if grep -q BuildBackendWarning "$RUNNER_TEMP/sdist-$project.log"; then
-              echo "The $project sdist build printed a BuildBackendWarning." >&2
-              exit 1
-            fi
-          done
-
-      # Both projects build into one dist/ at the repo root. An artifact of
-      # two directories keeps their paths, and the jobs that download it
-      # read the files at the top of dist/.
-      - uses: actions/upload-artifact@v4
-        with:
-          name: sdist
-          path: dist/*.tar.gz
-
-  build-wheels:
-    name: Build wheels (${{ matrix.name }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: ubuntu
-            os: ubuntu-latest
-            cibw_build: "cp312-manylinux_x86_64 cp313-manylinux_x86_64"
-          - name: ubuntu-arm64
-            os: ubuntu-24.04-arm
-            cibw_build: "cp312-manylinux_aarch64 cp313-manylinux_aarch64"
-          - name: macos
-            os: macos-15
-            cibw_build: "cp312-macosx_arm64 cp313-macosx_arm64"
-          - name: windows
-            os: windows-latest
-            cibw_build: "cp312-win_amd64 cp313-win_amd64"
-          # win_arm64 waits on opencv-python-headless publishing that wheel.
-          # The engine binary is in the sdist; revisit when opencv is optional.
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install build tools
-        run: pip install build cibuildwheel
-
-      # mufusion compiles nothing: one abi3 wheel per platform, holding
-      # that platform's CoreEngine binary.
-      - name: Build mufusion wheel
-        run: python -m build --wheel --outdir ../dist
-        working-directory: mufusion
-        env:
-          # Prebuilt CoreEngine binary requires macOS 14+
-          MACOSX_DEPLOYMENT_TARGET: "14.0"
-
-      - name: Build muraw wheels
-        run: python -m cibuildwheel --output-dir ../dist
-        working-directory: muraw
-        env:
-          CIBW_BUILD: ${{ matrix.cibw_build }}
-          CIBW_BUILD_VERBOSITY: 1
-          # Prebuilt libmuimg_core.*.dylib requires macOS 14+
-          CIBW_ENVIRONMENT_MACOS: MACOSX_DEPLOYMENT_TARGET=14.0
-          # Core .so is built newer than manylinux; Linux wheels are CI-only (not published).
-          CIBW_REPAIR_WHEEL_COMMAND_LINUX: ""
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: wheels-${{ matrix.name }}
-          path: dist/*.whl
-
-  test:
-    name: Test (${{ matrix.name }})
-    needs: [lint, build-wheels]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 90
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: ubuntu
-            os: ubuntu-latest
-            artifact: wheels-ubuntu
-            extras: "[all]"
-          - name: ubuntu-arm64
-            os: ubuntu-24.04-arm
-            artifact: wheels-ubuntu-arm64
-            extras: "[all]"
-          - name: macos
-            os: macos-15
-            artifact: wheels-macos
-            extras: "[all,coreimage]"
-          - name: windows
-            os: windows-latest
-            artifact: wheels-windows
-            extras: "[all]"
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - uses: actions/download-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: dist
-
-      # mufusion first, so muraw's dependency on it is met by the wheel
-      # from this run rather than by a release on PyPI.
-      - name: Install wheels and extras
-        shell: bash
-        run: |
-          set -euo pipefail
-          mufusion_whl=$(ls dist/mufusion-*.whl | head -n 1)
-          muraw_whl=$(ls dist/muraw-*cp312*.whl | head -n 1)
-          python -m pip install --upgrade pip
-          echo "Installing ${mufusion_whl}"
-          python -m pip install "${mufusion_whl}"
-          echo "Installing ${muraw_whl}${EXTRAS}"
-          python -m pip install "${muraw_whl}${EXTRAS}"
-        env:
-          EXTRAS: ${{ matrix.extras }}
-
-      - name: Run pytest
-        # Run outside the checkout so the installed wheels win over the
-        # mufusion/mufusion and muraw/muraw sources.
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd "${RUNNER_TEMP}"
-          python -m pytest "${GITHUB_WORKSPACE}/mufusion/tests" -v
-          python -m pytest "${GITHUB_WORKSPACE}/muraw/tests" -v
-
   publish:
     name: Publish to PyPI
-    needs: [lint, build-sdist, build-wheels, test]
-    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
+      actions: read
       id-token: write
     steps:
+      - name: Find the build run of the tagged commit
+        id: build
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml \
+            --branch main --commit "$GITHUB_SHA" --status success \
+            --json databaseId --jq '.[0].databaseId // empty')
+          if [ -z "$run_id" ]; then
+            echo "No passing ci.yml run on main for $GITHUB_SHA. Push the commit to main, wait for ci.yml to pass, then push the tag again." >&2
+            exit 1
+          fi
+          echo "Publishing the artifacts of ci.yml run $run_id"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
       # Publish the sdists and the Windows wheels of mufusion and muraw
       # only. macOS/Linux wheels are CI-only.
       - uses: actions/download-artifact@v4
         with:
           name: sdist
           path: dist
+          run-id: ${{ steps.build.outputs.run_id }}
+          github-token: ${{ github.token }}
 
       - uses: actions/download-artifact@v4
         with:
           name: wheels-windows
           path: dist
+          run-id: ${{ steps.build.outputs.run_id }}
+          github-token: ${{ github.token }}
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1

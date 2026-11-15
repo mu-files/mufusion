@@ -5,14 +5,14 @@ alwaysApply: true
 
 # Before a push
 
-CI's Ruff job (`.github/workflows/publish.yml`) installs a pinned ruff
+CI's Ruff job (`.github/workflows/ci.yml`) installs a pinned ruff
 and fails on any lint or formatting difference. Before every push of
 the mufusion repo, run from the repo root, which covers both the `mufusion` and
 the `muraw` projects, with the version the workflow pins:
 
 ```sh
 python3 -m venv /tmp/ruff-ci
-/tmp/ruff-ci/bin/pip install "ruff==<version in publish.yml>"
+/tmp/ruff-ci/bin/pip install "ruff==<version in ci.yml>"
 /tmp/ruff-ci/bin/ruff check
 /tmp/ruff-ci/bin/ruff format --check
 ```
