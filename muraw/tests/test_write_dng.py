@@ -19,7 +19,7 @@ from tifffile import COMPRESSION
 # These are harmless warnings when reading dng_validate output TIFFs
 logging.getLogger("tifffile").setLevel(logging.CRITICAL)
 
-from muraw.array import Array
+from mufusion._array import Array
 from muraw.dngio import (
     DngFile,
     IfdDataSpec,

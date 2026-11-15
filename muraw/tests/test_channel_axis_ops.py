@@ -9,8 +9,8 @@ from typing import Any
 import numpy as np
 import pytest
 
-import muimage as mi
-from muraw.array import Array, fliplr, flipud
+import mufusion as mu
+from mufusion._array import Array, fliplr, flipud
 from muraw.raw_render import _fix_vignette_opcode
 
 _MATRIX = np.eye(3, dtype=np.float32)[[1, 2, 0]]
@@ -33,10 +33,10 @@ def test_rgb_op_on_chw_raises_and_runs_after_moveaxis():
     chw = _chw()
     x = Array(chw, channel_axis=0)
     with pytest.raises(
-        ValueError, match=r"shape \(3, 6, 9\).*mi\.moveaxis\(x, 0, -1\)"
+        ValueError, match=r"shape \(3, 6, 9\).*mu\.moveaxis\(x, 0, -1\)"
     ):
-        mi.rgb_matrix_3x3(x, matrix=_MATRIX)
-    got = mi.rgb_matrix_3x3(mi.moveaxis(x, 0, -1), matrix=_MATRIX).realize()
+        mu.rgb_matrix_3x3(x, matrix=_MATRIX)
+    got = mu.rgb_matrix_3x3(mu.moveaxis(x, 0, -1), matrix=_MATRIX).realize()
     np.testing.assert_allclose(got, np.moveaxis(chw, 0, -1) @ _MATRIX.T, rtol=1e-6)
 
 
@@ -44,7 +44,7 @@ def test_rgb_op_on_chw_raises_and_runs_after_moveaxis():
 def test_cfa_op_on_chw_raises(shape):
     x = Array(np.zeros(shape, np.float32), channel_axis=0)
     with pytest.raises(ValueError, match=r"mono \(H, W\) or \(H, W, 1\)"):
-        mi.cfa_demosaic(x, cfa_pattern="RGGB")
+        mu.cfa_demosaic(x, cfa_pattern="RGGB")
 
 
 @pytest.mark.parametrize("height, width", [(6, 9), (9, 6)])
@@ -94,7 +94,7 @@ def test_chw_pad_with_channel_widths_matches_numpy(mode):
     chw = _chw()
     pad_width = ((1, 2), (1, 0), (0, 2))
     kwargs = {"constant_values": 0.5} if mode == "constant" else {}
-    got = mi.pad(Array(chw, channel_axis=0), pad_width, mode=mode, **kwargs)
+    got = mu.pad(Array(chw, channel_axis=0), pad_width, mode=mode, **kwargs)
     assert got.meta.channel_axis == 0
     np.testing.assert_array_equal(
         got.realize(), np.pad(chw, pad_width, mode=mode, **kwargs)
@@ -104,7 +104,7 @@ def test_chw_pad_with_channel_widths_matches_numpy(mode):
 @pytest.mark.parametrize("mode", ["edge", "reflect"])
 def test_chw_pad_shorthand_pads_channels_like_numpy(mode):
     chw = _chw()
-    got = mi.pad(Array(chw, channel_axis=0), 1, mode=mode)
+    got = mu.pad(Array(chw, channel_axis=0), 1, mode=mode)
     np.testing.assert_array_equal(got.realize(), np.pad(chw, 1, mode=mode))
 
 
@@ -112,7 +112,7 @@ def test_chw_pad_constants_per_axis_match_numpy():
     chw = _chw()
     pad_width = ((1, 1), (2, 2), (3, 3))
     constants = ((7, 8), (1, 2), (3, 4))
-    got = mi.pad(Array(chw, channel_axis=0), pad_width, constant_values=constants)
+    got = mu.pad(Array(chw, channel_axis=0), pad_width, constant_values=constants)
     np.testing.assert_array_equal(
         got.realize(), np.pad(chw, pad_width, constant_values=constants)
     )
@@ -122,7 +122,7 @@ def test_chw_pad_constants_per_axis_match_numpy():
 def test_chw_tile_matches_numpy(reps):
     chw = _chw()
     np.testing.assert_array_equal(
-        mi.tile(Array(chw, channel_axis=0), reps).realize(), np.tile(chw, reps)
+        mu.tile(Array(chw, channel_axis=0), reps).realize(), np.tile(chw, reps)
     )
 
 
@@ -130,7 +130,7 @@ def test_chw_broadcast_matches_numpy():
     chw = _chw()
     one_channel = Array(chw[:1], channel_axis=0)
     np.testing.assert_array_equal(
-        mi.broadcast_to(one_channel, (3, 6, 9)).realize(),
+        mu.broadcast_to(one_channel, (3, 6, 9)).realize(),
         np.broadcast_to(chw[:1], (3, 6, 9)),
     )
     repeated = np.broadcast_to(chw[:1], (4, 6, 9))
@@ -141,7 +141,7 @@ def test_legacy_full_frame_op_rejected_on_chw_and_runs_after_moveaxis():
     chw = _chw(40, 48)
 
     def run(x: Array) -> Array:
-        return mi.warp_rectilinear(
+        return mu.warp_rectilinear(
             x,
             radial_params=np.array([1.0, 0.0, 0.0, 0.0]),
             num_planes=1,
@@ -154,7 +154,7 @@ def test_legacy_full_frame_op_rejected_on_chw_and_runs_after_moveaxis():
     x = Array(chw, channel_axis=0)
     with pytest.raises(RuntimeError, match="GRAPH_INVALID"):
         run(x).realize()
-    assert run(mi.moveaxis(x, 0, -1)).realize().shape == (40, 48, 3)
+    assert run(mu.moveaxis(x, 0, -1)).realize().shape == (40, 48, 3)
 
 
 def test_chw_fix_vignette_matches_channels_last():
@@ -174,8 +174,8 @@ def test_chw_crop_then_moveaxis_then_rgb_op_matches_numpy():
     chw = _chw(40, 48)
     x = Array(chw, channel_axis=0)
     x = x[:, 16:-16, 16:-16] * 2.0
-    x = mi.moveaxis(x, 0, -1)
-    x = mi.rgb_matrix_3x3(x, matrix=_MATRIX)
+    x = mu.moveaxis(x, 0, -1)
+    x = mu.rgb_matrix_3x3(x, matrix=_MATRIX)
     assert _op_names(x).count("transpose") == 1
     want = np.moveaxis(chw[:, 16:-16, 16:-16] * 2.0, 0, -1) @ _MATRIX.T
     np.testing.assert_allclose(x.realize(), want, rtol=1e-6)
@@ -221,6 +221,6 @@ def test_random_index_matches_numpy(channel_axis, seed):
 def test_flip_matches_numpy(channel_axis, axis):
     src = _with_channels_on(channel_axis)
     x = Array(src, channel_axis=channel_axis)
-    np.testing.assert_array_equal(mi.flip(x, axis).realize(), np.flip(src, axis))
-    np.testing.assert_array_equal(mi.fliplr(x).realize(), np.fliplr(src))
-    np.testing.assert_array_equal(mi.flipud(x).realize(), np.flipud(src))
+    np.testing.assert_array_equal(mu.flip(x, axis).realize(), np.flip(src, axis))
+    np.testing.assert_array_equal(mu.fliplr(x).realize(), np.fliplr(src))
+    np.testing.assert_array_equal(mu.flipud(x).realize(), np.flipud(src))

@@ -1,0 +1,1191 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 mu-files
+"""muraw compute graph: OpNode / Array DAG, engine protocol, and orchestration.
+
+Pipeline code (e.g. ``raw_render``) builds this portable DAG, and the
+default engine runs it in one call per ``realize()``. Python code that is
+not an engine op runs on a realized array.
+"""
+
+from __future__ import annotations
+
+import operator
+from dataclasses import dataclass, field
+from enum import IntEnum
+from types import MappingProxyType
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    NamedTuple,
+    Optional,
+    Protocol,
+    Tuple,
+    runtime_checkable,
+)
+
+import numpy as np
+from numpy.typing import DTypeLike
+
+from .._array import (
+    Array,
+    ArrayMeta,
+    _as_shape,
+    _empty_array,
+    _meta_from_shape,
+    _seal_ndarray,
+    reshaped_meta,
+    supported_dtype,
+)
+from .._timing import PerfTimer
+
+OutMetaFn = Callable[[Array, Dict[str, Any]], Any]
+GraphOutMetaFn = Callable[[Array, Dict[str, Any]], ArrayMeta]
+
+# ---------------------------------------------------------------------------
+# Engine timing policy
+# ---------------------------------------------------------------------------
+
+
+class EngineTiming(IntEnum):
+    """How much detail ``graph.realize`` / execute should record."""
+
+    OFF = 0
+    SEGMENTS = 1  # one row per engine execute
+    OPS = 2  # + per-op rows inside an engine segment
+
+
+engine_timing: EngineTiming = EngineTiming.OFF
+
+
+def get_engine_timing() -> EngineTiming:
+    return engine_timing
+
+
+def set_engine_timing(level: EngineTiming | int | str) -> None:
+    """Set engine compute timing detail."""
+    global engine_timing
+    if isinstance(level, str):
+        engine_timing = EngineTiming[level.strip().upper()]
+    else:
+        engine_timing = EngineTiming(level)
+
+
+# ---------------------------------------------------------------------------
+# Engine protocol + default registry
+# ---------------------------------------------------------------------------
+
+_default_engine: Optional["Engine"] = None
+
+
+@runtime_checkable
+class Engine(Protocol):
+    """Backend that executes contiguous engine-affinity graph segments."""
+
+    @property
+    def supported_ops(self) -> frozenset[str]:
+        """Op names this engine can execute."""
+        ...
+
+    def execute(
+        self,
+        nodes: List[Array],
+        values: dict[int, np.ndarray],
+        root: Array,
+        output: Optional[np.ndarray] = None,
+    ) -> None:
+        """Run ``nodes``; write ``root`` into ``values`` (and any needed intermediates).
+
+        Every array in ``values`` has its ``meta.buffer_shape``, so a 1D
+        array is a one-row ``(1, N)`` buffer.
+
+        ``output``, when given, is the buffer for ``root``. It already has
+        ``root``'s buffer shape, dtype, and a layout this engine can bind.
+
+        At engine timing OPS, record per-op ``{op} (engine)`` children under the
+        current ``graph_compute`` step via ``PerfTimer.current()``.
+        """
+        ...
+
+
+def get_default_engine() -> Engine:
+    global _default_engine
+    if _default_engine is None:
+        from .core.engine import CoreEngine
+
+        _default_engine = CoreEngine()
+    return _default_engine
+
+
+def set_default_engine(engine: Engine) -> None:
+    global _default_engine
+    _default_engine = engine
+
+
+# ---------------------------------------------------------------------------
+# Op catalog types
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class OpMeta:
+    """Static catalog facts for an engine op (not dependent on a Array).
+
+    ``requires_2d``, ``is_cfa`` and ``is_rgb`` are defined in the header of
+    ``engines/catalog/ops.yaml``.
+    """
+
+    name: str
+    requires_2d: bool = False
+    is_cfa: bool = False
+    is_rgb: bool = False
+
+
+@dataclass(frozen=True)
+class EngineOp:
+    """Callable engine op + metadata. Public names live on ``mufusion``."""
+
+    meta: OpMeta
+    _out_dtype: OutMetaFn
+    _out_channels: OutMetaFn
+    # One channel count per catalog input entry; None = any.
+    _in_channels: Tuple[Optional[int], ...]
+    # Catalog input count. 0 means ``x`` is dest meta only, not a graph input.
+    _n_inputs: int
+    # True when the last input entry may appear one or more times on a node.
+    _variable_input: bool
+    _attr_specs: Tuple[Dict[str, Any], ...] = field(default_factory=tuple)
+    # When set (e.g. geometry: view), replaces channels/H×W/origin composition.
+    # The output dtype is still ``_out_dtype``.
+    _infer_meta: Optional[GraphOutMetaFn] = None
+
+    def __call__(self, x: Any, /, *more: Array, **attrs: Any) -> Array:
+        if self._n_inputs == 0:
+            return self._from_shape(x, *more, **attrs)
+        if self.meta.name == "orientation":
+            code = int(attrs.get("orientation", 0))
+            # TIFF orientation 1 is identity; skip the node.
+            if code == 1:
+                return x
+            if code in (2, 3, 4) and not more:
+                return _orientation_flip(self, x, attrs)
+        return emit(self, x, *more, **attrs)
+
+    def _from_shape(
+        self, shape: Any, /, *more: Any, dtype: DTypeLike = None, **attrs: Any
+    ) -> Array:
+        """An op with no inputs, called as ``np.zeros`` is: with the shape of
+        its output and a ``dtype``, float32 when not set. Where the catalog
+        fixes the output's channel count or dtype, ``shape`` and ``dtype``
+        must already have them."""
+        name = self.meta.name
+        if isinstance(shape, Array):
+            raise TypeError(
+                f"op {name!r} takes the shape of its output, such as x.shape, "
+                "not an array"
+            )
+        if more:
+            raise ValueError(f"op {name!r}: takes no inputs, got {1 + len(more)}")
+        requested = np.dtype(np.float32) if dtype is None else supported_dtype(dtype)
+        x = Array(_meta=_meta_from_shape(_as_shape(shape), requested))
+        if self.meta.requires_2d and x.meta.is_1d:
+            raise ValueError(f"op {name!r} writes a 2D array, got shape {x.shape}")
+        coerced = _validate_attrs(name, self._attr_specs, attrs)
+        out_meta = self.infer_out_meta(x, coerced)
+        if out_meta.shape != x.shape:
+            channels = out_meta.channels
+            example = (
+                "(height, width)" if channels == 1 else f"(height, width, {channels})"
+            )
+            raise ValueError(
+                f"op {name!r} writes {channels} channel(s); got shape {x.shape}. "
+                f"Pass a shape such as {example}"
+            )
+        if dtype is not None and out_meta.dtype != requested:
+            raise ValueError(
+                f"op {name!r} writes {out_meta.dtype}; got dtype {requested}"
+            )
+        return emit(self, Array(_meta=x.meta.copy(dtype=out_meta.dtype)), **attrs)
+
+    def infer_out_meta(
+        self, x: Array, attrs: Dict[str, Any], *more: Array
+    ) -> ArrayMeta:
+        """``more`` are the inputs after ``x``. Only a geometry policy of an
+        op with more than one input is passed them."""
+        if self._infer_meta is not None:
+            meta = self._infer_meta(x, attrs, *more)
+            dtype = self._out_dtype(x, attrs)
+            return meta if meta.dtype == dtype else meta.copy(dtype=dtype)
+        return x.meta.with_size(
+            channels=self._out_channels(x, attrs),
+            dtype=self._out_dtype(x, attrs),
+        )
+
+    def __repr__(self) -> str:
+        return f"EngineOp({self.meta.name!r})"
+
+
+def _out_dtype_same(x: Array, attrs: Dict[str, Any]) -> np.dtype:
+    return x.meta.dtype
+
+
+def _out_dtype_float_of_input(x: Array, attrs: Dict[str, Any]) -> np.dtype:
+    """``x``'s dtype when it is a float, and float32 when it is an integer,
+    as NumPy's true division writes a float."""
+    if x.meta.dtype.kind == "f":
+        return x.meta.dtype
+    return np.dtype(np.float32)
+
+
+def _out_dtype_float_holding_input(x: Array, attrs: Dict[str, Any]) -> np.dtype:
+    """The narrowest float that holds every value of ``x`` exactly.
+    bool and uint8 are float16, uint16 is float32, and a float stays itself.
+    NumPy's square root writes this dtype."""
+    if x.meta.dtype in (np.dtype(np.uint8), np.dtype(np.bool_)):
+        return np.dtype(np.float16)
+    if x.meta.dtype.kind == "f":
+        return x.meta.dtype
+    return np.dtype(np.float32)
+
+
+def _out_dtype_const(dtype: DTypeLike) -> OutMetaFn:
+    resolved = supported_dtype(dtype)
+
+    def _fn(x: Array, attrs: Dict[str, Any]) -> np.dtype:
+        return resolved
+
+    return _fn
+
+
+def _out_dtype_from_attr(key: str) -> OutMetaFn:
+    def _fn(x: Array, attrs: Dict[str, Any]) -> np.dtype:
+        val = attrs.get(key)
+        try:
+            return supported_dtype(val)
+        except ValueError as e:
+            raise ValueError(f"attr {key!r}: {e}") from e
+
+    return _fn
+
+
+def _out_channels_same(x: Array, attrs: Dict[str, Any]) -> int:
+    return x.meta.channels
+
+
+def _out_channels_const(n: int) -> OutMetaFn:
+    def _fn(x: Array, attrs: Dict[str, Any]) -> int:
+        return n
+
+    return _fn
+
+
+def _out_channels_from_attr(key: str) -> OutMetaFn:
+    def _fn(x: Array, attrs: Dict[str, Any]) -> int:
+        return int(attrs[key])
+
+    return _fn
+
+
+def _sample_box(origin: int, count: int, step: int) -> Tuple[int, int]:
+    """Bounding box of ``count`` samples starting at ``origin`` with ``step``."""
+    last = origin + (count - 1) * step
+    start = min(origin, last)
+    return start, abs(last - origin) + 1
+
+
+def _reflected_canvas(
+    canvas: Tuple[int, int, int, int],
+    sample_col: int,
+    sample_row: int,
+    col_step: int,
+    row_step: int,
+    origin_col: int,
+    origin_row: int,
+) -> Tuple[int, int, int, int]:
+    """Parent canvas in dest coordinates.
+
+    Dest ``(0, 0)`` is the first sample. One dest step on an axis moves by
+    that axis's source step, which is ±1.
+    """
+
+    def axis(
+        parent_start: int,
+        parent_len: int,
+        sample: int,
+        step: int,
+        dest_origin: int,
+    ) -> Tuple[int, int]:
+        start, length = _sample_box((parent_start - sample) * step, parent_len, step)
+        return dest_origin + start, length
+
+    cx, cy, cw, ch = canvas
+    x0, width = axis(cx, cw, sample_col, col_step, origin_col)
+    y0, height = axis(cy, ch, sample_row, row_step, origin_row)
+    return (x0, y0, width, height)
+
+
+def _out_meta_view(x: Array, attrs: Dict[str, Any]) -> ArrayMeta:
+    """Geometry policy ``view``: H/W from attrs. Canvas stays in this array's system.
+
+    View attrs ``left``/``top`` are dest-relative. The sample bounding box
+    is checked in the shared canvas system (dest ``(0, 0)`` is ``origin``).
+    ``width`` and ``height`` are sample counts. ``row_step`` and ``col_step``
+    default to 1. A step of -1 keeps the parent canvas, reflected so dest
+    +1 follows that step. A step whose absolute value is greater than 1
+    puts the result on its own canvas at origin ``(0, 0)``.
+    ``mode`` ``crop_oob_valid`` (the default) and ``crop_oob_invalid``
+    give ``origin' = origin + (top, left)``, the first sample, and the
+    parent's canvas. The result's ``oob_valid`` is the parent's for
+    ``crop_oob_valid``, so a view of a NumPy slice never reads past the
+    slice, and false for ``crop_oob_invalid``. ``crop_reset_canvas`` sets
+    origin ``(0, 0)`` and starts a new canvas on the view rect, with
+    nothing past it to read. The box must sit inside the parent's
+    ``readable`` rect.
+    """
+    left, top = int(attrs["left"]), int(attrs["top"])
+    width, height = int(attrs["width"]), int(attrs["height"])
+    row_step = int(attrs.get("row_step", 1))
+    col_step = int(attrs.get("col_step", 1))
+    if width < 1 or height < 1:
+        raise ValueError(
+            f"view: invalid box top={top} left={left} width={width} height={height}"
+        )
+    if row_step == 0 or col_step == 0:
+        raise ValueError(
+            f"view: step must be non-zero, got row={row_step} col={col_step}"
+        )
+    rx, ry, rw, rh = x.meta.readable
+    base_row, base_col = x.meta.origin
+    box_left, box_width = _sample_box(left, width, col_step)
+    box_top, box_height = _sample_box(top, height, row_step)
+    shared_left = box_left + base_col
+    shared_top = box_top + base_row
+    if (
+        shared_left < rx
+        or shared_top < ry
+        or shared_left + box_width > rx + rw
+        or shared_top + box_height > ry + rh
+    ):
+        raise ValueError(
+            f"view: box top={top} left={left} width={width} height={height} "
+            f"row_step={row_step} col_step={col_step} "
+            f"is outside the readable rect {(rx, ry, rw, rh)}"
+        )
+    decimated = abs(row_step) > 1 or abs(col_step) > 1
+    reflected = row_step != 1 or col_step != 1
+    first_row, first_col = base_row + top, base_col + left
+    mode = attrs.get("mode", "crop_oob_valid")
+    if decimated or mode == "crop_reset_canvas":
+        origin = (0, 0)
+        canvas = (0, 0, width, height)
+        oob_valid = True
+    else:
+        oob_valid = mode == "crop_oob_valid" and x.meta.oob_valid
+        origin = (first_row, first_col)
+        if reflected:
+            canvas = _reflected_canvas(
+                x.meta.canvas,
+                first_col,
+                first_row,
+                col_step,
+                row_step,
+                first_col,
+                first_row,
+            )
+        else:
+            canvas = x.meta.canvas
+    channels = x.meta.channels
+    if "src_channels" in attrs:
+        src_channels = attrs["src_channels"]
+        channels = len(src_channels)
+        if any(not 0 <= int(value) < x.meta.channels for value in src_channels):
+            raise IndexError(
+                f"view: src_channels {list(src_channels)} has an index out of bounds "
+                f"for {x.meta.channels} channel(s)"
+            )
+    frames = x.meta.frames
+    if "src_frames" in attrs:
+        src_frames = attrs["src_frames"]
+        frames = len(src_frames)
+        if any(not 0 <= int(value) < x.meta.frames for value in src_frames):
+            raise IndexError(
+                f"view: src_frames {list(src_frames)} has an index out of bounds "
+                f"for {x.meta.frames} frame(s)"
+            )
+    return x.meta.with_size(
+        height=height,
+        width=width,
+        channels=channels,
+        frames=frames,
+        origin=origin,
+        canvas=canvas,
+        oob_valid=oob_valid,
+    )
+
+
+def _out_meta_pad(x: Array, attrs: Dict[str, Any]) -> ArrayMeta:
+    """Geometry policy ``pad``: grow H/W, and channels or frames when those
+    attrs are set.
+
+    Dest ``(left, top)`` is src ``(0, 0)``. The result is an image of its
+    own: origin ``(0, 0)`` and a canvas that is the padded array.
+    """
+    top = int(attrs["top"])
+    bottom = int(attrs["bottom"])
+    left = int(attrs["left"])
+    right = int(attrs["right"])
+    channel_before = int(attrs.get("channel_before", 0))
+    channel_after = int(attrs.get("channel_after", 0))
+    frame_before = int(attrs.get("frame_before", 0))
+    frame_after = int(attrs.get("frame_after", 0))
+    sides = [
+        top,
+        bottom,
+        left,
+        right,
+        channel_before,
+        channel_after,
+        frame_before,
+        frame_after,
+    ]
+    if min(sides) < 0:
+        raise ValueError(
+            "pad: top/bottom/left/right/channel_before/channel_after/frame_before/"
+            f"frame_after {sides} must be non-negative"
+        )
+    if (frame_before or frame_after) and x.meta.ndim != 4:
+        raise ValueError(f"pad: a frame pad needs a 4-axis stack, got shape {x.shape}")
+    mode = attrs.get("mode", "constant")
+    if (
+        (channel_before or channel_after)
+        and mode != "constant"
+        and x.meta.channel_axis != 0
+    ):
+        raise ValueError(
+            f"pad: a channel pad requires mode 'constant' unless the channels are "
+            f"on axis 0, got {mode!r}"
+        )
+    dest_h = x.meta.height + top + bottom
+    dest_w = x.meta.width + left + right
+    if channel_before or channel_after:
+        ndim = max(3, x.meta.ndim)
+    elif x.meta.is_1d and (top or bottom):
+        ndim = 2
+    else:
+        ndim = x.meta.ndim
+    return x.meta.with_size(
+        height=dest_h,
+        width=dest_w,
+        channels=x.meta.channels + channel_before + channel_after,
+        frames=x.meta.frames + frame_before + frame_after,
+        ndim=ndim,
+        origin=(0, 0),
+        canvas=(0, 0, dest_w, dest_h),
+        oob_valid=True,
+    )
+
+
+def _out_meta_tile(x: Array, attrs: Dict[str, Any]) -> ArrayMeta:
+    """Geometry policy ``tile``: each axis grows by its repeat counts, the
+    rows and the columns by ``row_repeats`` and ``col_repeats`` too.
+
+    The first copy keeps the source origin. Canvas grows to the right
+    and down from that origin.
+    """
+    row_reps = int(attrs["row_reps"])
+    col_reps = int(attrs["col_reps"])
+    channel_reps = int(attrs["channel_reps"])
+    if min(row_reps, col_reps, channel_reps) < 1:
+        raise ValueError(
+            "tile: row_reps/col_reps/channel_reps "
+            f"{[row_reps, col_reps, channel_reps]} must be >= 1"
+        )
+    frame_reps = int(attrs.get("frame_reps", 1))
+    if frame_reps < 1:
+        raise ValueError(f"tile: frame_reps {frame_reps} must be >= 1")
+    row_repeats = int(attrs.get("row_repeats", 1))
+    col_repeats = int(attrs.get("col_repeats", 1))
+    if min(row_repeats, col_repeats) < 1:
+        raise ValueError(
+            f"tile: row_repeats/col_repeats {[row_repeats, col_repeats]} must be >= 1"
+        )
+    dest_h = x.meta.height * row_repeats * row_reps
+    dest_w = x.meta.width * col_repeats * col_reps
+    origin_row, origin_col = x.meta.origin
+    return x.meta.with_size(
+        height=dest_h,
+        width=dest_w,
+        channels=x.meta.channels * channel_reps,
+        frames=x.meta.frames * frame_reps,
+        ndim=2 if x.meta.is_1d and row_reps > 1 else x.meta.ndim,
+        canvas=(origin_col, origin_row, dest_w, dest_h),
+    )
+
+
+def _out_meta_take(x: Array, attrs: Dict[str, Any]) -> ArrayMeta:
+    """Geometry policy ``take``: the rows and columns are the lengths of
+    ``row_indices`` and ``col_indices``, each axis unchanged without its
+    list. The result is its own canvas at origin ``(0, 0)``, as a view
+    with a step.
+    """
+    sizes = {"row_indices": x.meta.height, "col_indices": x.meta.width}
+    dest = {}
+    for key, size in sizes.items():
+        indices = attrs.get(key)
+        if indices is None:
+            dest[key] = size
+            continue
+        if len(indices) == 0:
+            raise ValueError(f"take: {key} is empty")
+        if any(not 0 <= int(index) < size for index in indices):
+            raise IndexError(f"take: {key} has an index out of bounds for size {size}")
+        dest[key] = len(indices)
+    dest_h, dest_w = dest["row_indices"], dest["col_indices"]
+    return x.meta.with_size(
+        height=dest_h,
+        width=dest_w,
+        origin=(0, 0),
+        canvas=(0, 0, dest_w, dest_h),
+    )
+
+
+def _out_meta_resize(x: Array, attrs: Dict[str, Any]) -> ArrayMeta:
+    """Geometry policy ``resize``: the rows and columns are ``out_rows`` and
+    ``out_cols``. The result is its own canvas at origin ``(0, 0)``.
+
+    The core engine runs ``nearest``, ``bilinear``, ``area`` and ``auto``
+    when no axis shrinks, and any interpolation when the scale of both
+    axes is 1. ``area`` and ``auto`` on a shrinking axis raise
+    ``NotImplementedError``.
+    """
+    out_rows = int(attrs["out_rows"])
+    out_cols = int(attrs["out_cols"])
+    if min(out_rows, out_cols) < 1:
+        raise ValueError(
+            f"resize: the output size {(out_rows, out_cols)} must be at least 1 "
+            "on each axis"
+        )
+    scale_rows = attrs.get("scale_rows")
+    scale_cols = attrs.get("scale_cols")
+    if (scale_rows is None) != (scale_cols is None):
+        raise ValueError("resize: set both scale_rows and scale_cols, or neither")
+    if scale_rows is None:
+        scales = (out_rows / x.meta.height, out_cols / x.meta.width)
+    else:
+        scales = (float(scale_rows), float(scale_cols))
+    interpolation = attrs.get("interpolation", "auto")
+    for axis, scale in zip(("rows", "columns"), scales):
+        if interpolation in ("area", "auto") and scale < 1:
+            raise NotImplementedError(
+                f"resize: interpolation {interpolation!r} at a scale of {scale:g} "
+                f"on the {axis} is not supported yet; interpolation='bilinear' "
+                "or 'nearest' is"
+            )
+    return x.meta.with_size(
+        height=out_rows,
+        width=out_cols,
+        origin=(0, 0),
+        canvas=(0, 0, out_cols, out_rows),
+    )
+
+
+# TIFF orientation code → (swap H and W, flip x, flip y) of the map from
+# dest to source.
+_ORIENTATION = {
+    1: (False, False, False),
+    2: (False, True, False),
+    3: (False, True, True),
+    4: (False, False, True),
+    5: (True, False, False),
+    6: (True, False, True),
+    7: (True, True, True),
+    8: (True, True, False),
+}
+
+
+def _orientation_flip(op: "EngineOp", x: Array, attrs: Dict[str, Any]) -> Array:
+    """TIFF orientation 2, 3 or 4 of ``x``, as a view with negative steps.
+
+    These codes keep each row a row, so a view runs them as a span op;
+    ``orientation`` is a tile op for the sake of codes 5–8, and is about
+    three times slower on the same flip. The view moves the origin to its
+    first sample, so the result is given the meta ``orientation`` gives,
+    which keeps the input's origin. The canvas relative to the origin is the
+    same in both.
+    """
+    from .._array import Array as ArrayType
+    from .._array import _with_meta, flip
+
+    x = ArrayType(x)
+    _, flip_cols, flip_rows = _ORIENTATION[int(attrs["orientation"])]
+    if x.meta.is_1d:
+        axes: Tuple[int, ...] = (0,) if flip_cols else ()
+    else:
+        rows_axis, cols_axis = x.meta.spatial_axes
+        axes = ((rows_axis,) if flip_rows else ()) + ((cols_axis,) if flip_cols else ())
+    if not axes:
+        return x
+    return _with_meta(flip(x, axes), op.infer_out_meta(x, attrs))
+
+
+def _orient_rect(
+    code: int, rect: Tuple[int, int, int, int], src_w: int, src_h: int
+) -> Tuple[int, int, int, int]:
+    """Map ``rect`` in source coordinates to dest coordinates."""
+    swap, flip_x, flip_y = _ORIENTATION[code]
+    x0, y0, w, h = rect
+    if flip_x:
+        x0 = src_w - x0 - w
+    if flip_y:
+        y0 = src_h - y0 - h
+    return (y0, x0, h, w) if swap else (x0, y0, w, h)
+
+
+def _out_meta_orientation(x: Array, attrs: Dict[str, Any]) -> ArrayMeta:
+    """Geometry policy ``orientation``: swap H×W for TIFF codes 5–8.
+
+    Canvas is remapped in dest space, then stored back in the shared
+    system (dest ``(0, 0)`` is ``origin``).
+    """
+    code = int(attrs["orientation"])
+    if code not in _ORIENTATION:
+        raise ValueError(f"orientation: invalid TIFF code {code} (expected 1–8)")
+    swap = _ORIENTATION[code][0]
+    height = x.meta.width if swap else x.meta.height
+    width = x.meta.height if swap else x.meta.width
+    origin_row, origin_col = x.meta.origin
+    cx, cy, cw, ch = x.meta.canvas
+    local = (cx - origin_col, cy - origin_row, cw, ch)
+    mx, my, mw, mh = _orient_rect(code, local, x.meta.width, x.meta.height)
+    return x.meta.with_size(
+        height=height,
+        width=width,
+        ndim=2 if x.meta.is_1d and swap else x.meta.ndim,
+        canvas=(mx + origin_col, my + origin_row, mw, mh),
+    )
+
+
+def _out_meta_transpose(x: Array, attrs: Dict[str, Any]) -> ArrayMeta:
+    """Geometry policy ``transpose``: axis ``i`` of the output is axis
+    ``axes[i]`` of the 3-axis input, and the channel axis moves with it.
+
+    Origin and canvas describe the rows and the columns. When the rows and
+    the columns trade places, they are remapped as by ``orientation`` 5.
+    """
+    axes = tuple(int(axis) for axis in attrs["axes"])
+    meta = x.meta
+    if meta.ndim != 3 or sorted(axes) != [0, 1, 2]:
+        raise ValueError(
+            f"transpose: axes {list(axes)} is not a permutation of the axes of shape {x.shape}"
+        )
+    rows_axis, cols_axis = meta.spatial_axes
+    canvas = meta.canvas
+    if axes.index(rows_axis) > axes.index(cols_axis):
+        origin_row, origin_col = meta.origin
+        cx, cy, cw, ch = canvas
+        canvas = (cy - origin_row + origin_col, cx - origin_col + origin_row, ch, cw)
+    return meta.copy(
+        shape=tuple(meta.shape[axis] for axis in axes),
+        channel_axis=axes.index(meta.channel_axis),
+        canvas=canvas,
+    )
+
+
+def _out_meta_reshape(x: Array, attrs: Dict[str, Any]) -> ArrayMeta:
+    """Geometry policy ``reshape``: the same samples as ``shape``, as
+    ``np.reshape``. A 3-axis result has its channels on the last axis.
+    """
+    shape = tuple(int(axis) for axis in attrs["shape"])
+    return reshaped_meta(x.meta, shape)
+
+
+def _out_meta_broadcast(x: Array, attrs: Dict[str, Any], *more: Array) -> ArrayMeta:
+    """Geometry policy ``broadcast``: NumPy's broadcast shape of every input.
+
+    The inputs have one dtype and the same number of axes. The result is
+    the meta of the first input that already has the broadcast shape, or a
+    whole canvas with ``x``'s channel axis when none does.
+    """
+    inputs = (x, *more)
+    if all(inp.shape == x.shape for inp in more):
+        return x.meta
+    shape = np.broadcast_shapes(*(inp.shape for inp in inputs))
+    for inp in inputs:
+        if inp.shape == shape:
+            return inp.meta
+    return _meta_from_shape(shape, x.dtype, x.meta.channel_axis)
+
+
+def _convert_colormodel_channels(src: str) -> int:
+    """The channel count ``src`` reads. ``src`` is ``RGB`` or ``GRAY``."""
+    if src == "RGB":
+        return 3
+    return 1
+
+
+def _kept_placement(meta: ArrayMeta, x: Array) -> ArrayMeta:
+    """``meta`` with the origin, canvas, and ``oob_valid`` of ``x``."""
+    return meta.copy(
+        origin=x.meta.origin, canvas=x.meta.canvas, oob_valid=x.meta.oob_valid
+    )
+
+
+def _out_meta_convert_colormodel(x: Array, attrs: Dict[str, Any]) -> ArrayMeta:
+    """Geometry policy ``convert_colormodel``.
+
+    RGB to gray drops the channel axis: an ``(H, W, 3)`` image becomes
+    ``(H, W)``, and a stack ``(N, H, W, 3)`` becomes ``(N, H, W)`` with
+    its frames on axis 0. Gray to RGB writes three channels last. The
+    rows, columns, origin, and canvas stay. A pair other than those two
+    raises ``NotImplementedError``.
+    """
+    src = attrs["src_model"]
+    dst = attrs["dst_model"]
+    if x.meta.is_1d:
+        raise NotImplementedError(
+            f"convert_colormodel of shape {x.shape} is not supported; "
+            "pass an (H, W) image or one with a channel axis"
+        )
+    if (src, dst) not in (("RGB", "GRAY"), ("GRAY", "RGB")):
+        raise NotImplementedError(
+            f"convert_colormodel from {src} to {dst} is not supported yet"
+        )
+    need = _convert_colormodel_channels(src)
+    if x.meta.channels != need:
+        noun = "channel" if need == 1 else "channels"
+        raise NotImplementedError(
+            f"convert_colormodel from {src} reads {need} {noun}, got {x.meta.channels}"
+        )
+    if src == "RGB":
+        if x.meta.ndim == 4:
+            meta = _meta_from_shape(
+                (x.meta.frames, x.meta.height, x.meta.width), x.dtype, 0
+            )
+            return _kept_placement(meta, x)
+        return x.meta.with_size(channels=1, ndim=2)
+    if x.meta.ndim == 3 and x.meta.channel_axis == 0:
+        meta = _meta_from_shape((x.meta.height, x.meta.width, 3), x.dtype, -1)
+        return _kept_placement(meta, x)
+    if x.meta.ndim == 2:
+        meta = _meta_from_shape((x.meta.height, x.meta.width, 3), x.dtype, -1)
+        return _kept_placement(meta, x)
+    return x.meta.with_size(channels=3)
+
+
+class OpNode(NamedTuple):
+    """A catalog engine op applied to ``inputs``."""
+
+    op: str
+    inputs: Tuple[Array, ...]
+    attrs: Mapping[str, Any]
+    out_meta: ArrayMeta
+
+
+def check_engine_layout(meta: ArrayMeta) -> None:
+    """Raise when the engine cannot read an array of ``meta``.
+
+    The engine reads the channels of a 3-axis array last, ``(H, W, C)``, or
+    first, ``(C, H, W)``, never on axis 1. A 4-axis stack is ``(N, H, W, C)``.
+    An empty array is never sent to the engine, so it may have any layout.
+    """
+    ndim = len(meta.shape)
+    if ndim < 3:
+        return
+    axis = meta.channel_axis
+    if (axis != 1 if ndim == 3 else axis == 3) or meta.size == 0:
+        return
+    if ndim == 3:
+        raise NotImplementedError(
+            f"shape {meta.shape} with channel_axis 1 is not supported; put the "
+            "channels last, (H, W, C), or first, (C, H, W), with mu.moveaxis"
+        )
+    raise NotImplementedError(
+        f"shape {meta.shape} with channel_axis {axis} is not supported; "
+        "a 4-axis stack is (N, H, W, C)"
+    )
+
+
+def _check_input(
+    op_meta: OpMeta, in_channels: Optional[int], x: Array, index: int = 0
+) -> None:
+    """Raise when ``x`` is not input ``index`` of the op ``op_meta``.
+
+    An ``rgb_`` op mixes the channels of each pixel, so it needs them on the
+    last axis. A ``cfa_`` op reads a mono mosaic, ``(H, W)`` or ``(H, W, 1)``.
+    ``in_channels`` is the channel count the op needs, or ``None`` for any.
+    """
+    name = op_meta.name
+    check_engine_layout(x.meta)
+    channel_axis = x.meta.channel_axis
+    if op_meta.requires_2d and x.meta.is_1d:
+        raise ValueError(f"op {name!r} requires a 2D input, got shape {x.shape}")
+    if op_meta.is_rgb and channel_axis not in (None, x.meta.ndim - 1):
+        raise ValueError(
+            f"op {name!r} needs the channels on the last axis, as (H, W, 3); got "
+            f"shape {x.shape} with channel_axis {channel_axis}. Move them with "
+            f"mu.moveaxis(x, {channel_axis}, -1)"
+        )
+    if op_meta.is_cfa and x.meta.ndim == 4:
+        raise NotImplementedError(
+            f"op {name!r} on a 4-axis stack {x.shape} is not supported; run it on "
+            "each frame"
+        )
+    if op_meta.is_cfa and channel_axis not in (None, 2):
+        raise ValueError(
+            f"op {name!r} needs a mono (H, W) or (H, W, 1) array; got shape {x.shape} "
+            f"with channel_axis {channel_axis}"
+        )
+    if in_channels is not None and x.meta.channels != in_channels:
+        raise ValueError(
+            f"op {name!r} input[{index}]: expected {in_channels} channel(s), "
+            f"got {x.meta.channels}"
+        )
+
+
+_SCALAR_FLOAT = {"f32": np.float32, "f64": np.float64}
+_ARRAY_DTYPE = {
+    "f32_array": np.float32,
+    "f64_array": np.float64,
+    "i32_array": np.int32,
+}
+
+
+def _coerce_attr(spec: Dict[str, Any], value: Any) -> Any:
+    """Coerce a Python attr value to the catalog wire form."""
+    key = spec["key"]
+    typ = spec["type"]
+    count = spec.get("count", 1)
+    if typ in _SCALAR_FLOAT:
+        if isinstance(value, bool) or not isinstance(value, (int, float, np.floating)):
+            raise TypeError(f"attr {key!r} must be a float")
+        return _SCALAR_FLOAT[typ](value)
+    if typ == "i32":
+        if isinstance(value, bool):
+            raise TypeError(f"attr {key!r} must be an int")
+        try:
+            return operator.index(value)
+        except TypeError as e:
+            raise TypeError(f"attr {key!r} must be an int") from e
+    if typ == "bool":
+        if not isinstance(value, (bool, np.bool_, int)):
+            raise TypeError(f"attr {key!r} must be a bool")
+        return int(bool(value))
+    if typ == "string":
+        if not isinstance(value, str):
+            raise TypeError(f"attr {key!r} must be a str")
+        allowed = spec.get("values")
+        if allowed is not None and value not in allowed:
+            raise ValueError(
+                f"attr {key!r} must be one of {list(allowed)}, got {value!r}"
+            )
+        return value
+    if typ in _ARRAY_DTYPE:
+        arr = np.ascontiguousarray(value, dtype=_ARRAY_DTYPE[typ]).reshape(-1)
+        if count and arr.size != count:
+            raise ValueError(f"{key} must have {count} elements, got {arr.size}")
+        if arr.size < 1:
+            raise ValueError(f"{key} must be non-empty")
+        return arr
+    raise ValueError(f"attr {key!r}: unsupported catalog type {typ!r}")
+
+
+def _validate_attrs(
+    name: str, specs: Tuple[Dict[str, Any], ...], attrs: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Validate/coerce attrs against the op's attr specs; reject unknown keys."""
+    by_key = {s["key"]: s for s in specs}
+    unknown = set(attrs) - set(by_key)
+    if unknown:
+        raise ValueError(f"op {name!r}: unknown attrs {sorted(unknown)}")
+    required = {k for k, s in by_key.items() if not s.get("optional")}
+    missing = required - set(attrs)
+    if missing:
+        raise ValueError(f"op {name!r}: missing attrs {sorted(missing)}")
+    out: Dict[str, Any] = {}
+    for k, v in attrs.items():
+        if v is None and by_key[k].get("optional"):
+            continue
+        out[k] = _coerce_attr(by_key[k], v)
+    return out
+
+
+def _check_input_count(engine_op: EngineOp, count: int) -> None:
+    """Raise when the op ``engine_op`` does not take ``count`` inputs."""
+    expected = engine_op._n_inputs
+    if engine_op._variable_input:
+        if count < expected:
+            raise ValueError(
+                f"op {engine_op.meta.name!r}: expected at least {expected} "
+                f"input(s), got {count}"
+            )
+    elif count != expected:
+        raise ValueError(
+            f"op {engine_op.meta.name!r}: expected {expected} input(s), got {count}"
+        )
+
+
+def emit(engine_op: EngineOp, x: Array, /, *more: Array, **attrs: Any) -> Array:
+    """Validate inputs and attrs, ask the op for output meta, and build a lazy node.
+
+    ``x`` is input 0 and ``more`` are the inputs after it. An op with no
+    inputs takes only ``x``, as the meta of its output. When the op's last
+    input is variable, input ``i`` past the catalog entries is checked
+    against the last entry.
+    """
+    name = engine_op.meta.name
+    if engine_op._n_inputs == 0:
+        if more:
+            raise ValueError(f"op {name!r}: takes no inputs, got {1 + len(more)}")
+        if engine_op.meta.requires_2d and x.meta.is_1d:
+            raise ValueError(f"op {name!r} writes a 2D array, got shape {x.shape}")
+        inputs: Tuple[Array, ...] = ()
+    else:
+        inputs = (x, *more)
+        _check_input_count(engine_op, len(inputs))
+    for index, inp in enumerate(inputs):
+        entry = min(index, len(engine_op._in_channels) - 1)
+        _check_input(engine_op.meta, engine_op._in_channels[entry], inp, index)
+    if attrs or engine_op._attr_specs:
+        coerced = MappingProxyType(_validate_attrs(name, engine_op._attr_specs, attrs))
+    else:
+        coerced = _NO_ATTRS
+    out_meta = engine_op.infer_out_meta(x, coerced, *more)
+    check_engine_layout(out_meta)
+    if 0 in out_meta.shape:
+        return _empty_array(out_meta)
+    empty = [index for index, inp in enumerate(inputs) if 0 in inp.shape]
+    if empty:
+        raise NotImplementedError(
+            f"op {name!r}: input {empty[0]} of shape {inputs[empty[0]].shape} is "
+            f"empty and the result of shape {out_meta.shape} is not"
+        )
+    return Array(_meta=out_meta, _node=OpNode(name, inputs, coerced, out_meta))
+
+
+# The attrs of every node of an op that has none.
+_NO_ATTRS: Mapping[str, Any] = MappingProxyType({})
+
+# ``engines.ops`` imports this module, so ``op`` imports it on its first call.
+_ops_by_name: Optional[Mapping[str, EngineOp]] = None
+
+
+def op(name: str, x: Array, /, *more: Array, **attrs: Any) -> Array:
+    """Emit a named engine op (thin alias over ``engines.ops.OPS_BY_NAME``)."""
+    global _ops_by_name
+    if _ops_by_name is None:
+        from .ops import OPS_BY_NAME
+
+        _ops_by_name = OPS_BY_NAME
+    engine_op = _ops_by_name.get(name)
+    if engine_op is None:
+        raise ValueError(f"unknown engine op {name!r}")
+    return emit(engine_op, x, *more, **attrs)
+
+
+def flush(x: Array) -> Array:
+    """Materialize a lazy graph into a concrete source Array."""
+    return Array(x.realize())
+
+
+def _run_op_arrays(
+    op_arrays: List[Array],
+    values: Dict[int, np.ndarray],
+    root: Array,
+    output: Optional[np.ndarray] = None,
+) -> None:
+    """Run ``op_arrays`` as one engine call that writes ``root``."""
+    parent = PerfTimer.current()
+    timing = PerfTimer.inactive
+    if parent is not None and get_engine_timing() >= EngineTiming.SEGMENTS:
+        timing = parent.start_step("graph_compute")
+    try:
+        get_default_engine().execute(op_arrays, values, root, output=output)
+    finally:
+        timing.close()
+
+
+def realize(
+    root: Array,
+    *,
+    force_recompute: bool = False,
+    out: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """Run the graph if needed and return ``root``'s pixels.
+
+    Only ``root`` keeps its pixels. The engine's buffers for the other
+    arrays are dropped on return. ``out`` is the exception: when the engine
+    writes it directly, those pixels stay in the caller's array and are not
+    kept on ``root``.
+
+    ``out`` must have ``root``'s shape and be writeable. For a different
+    dtype the result is ``root.astype(out.dtype)``, which must be a
+    ``same_kind`` cast; a ``root`` realized earlier is cast that way too.
+    ``out`` may share memory with a buffer the graph reads, as NumPy's
+    ``out=`` may; the engine then writes its own buffer and copies it into
+    ``out`` after the run. The engine writes ``out`` when it can bind that
+    buffer, and when ``out`` flips or permutes the axes of a buffer it can
+    bind: ``root``
+    gets the same flip and transpose, and the engine writes that buffer.
+    Anything else is copied into
+    ``out``, including a negative stride that skips elements, such as
+    ``[:, ::-2]``. The written buffer is neither sealed nor kept on
+    ``root``. With ``force_recompute``, a cache ``root`` already had is
+    dropped unless the new pixels replace it, so a later ``realize()``
+    never returns the old pixels.
+
+    An array the caller realized earlier has ``_data``, which is handed to
+    the engine as an extra bind. The engine skips a producer when that
+    buffer covers the array's canvas. ``force_recompute`` omits those binds
+    and reruns every op.
+
+    A reshape of pixels is ``np.reshape`` of those pixels, a view. When
+    ``root`` is only reshapes of some array, that array is realized and
+    the result is its pixels reshaped. The engine would otherwise copy:
+    a ``reshape`` that is the last node has the caller's buffer to fill
+    and its producer's buffer to fill it from.
+
+    An array that several row-by-row ops read is not stored as a whole
+    image: the engine computes its rows as the readers need them. Where
+    the reads of one row are far apart, as with a flip of the array or a
+    shifted read, the row is computed again for the later read. To compute
+    such an array once, realize it first; later graphs read its pixels.
+    An array read by a tiled or whole-image op (``rot90``, ``transpose``)
+    is still stored as a whole image.
+    """
+    requested = root
+    if out is not None:
+        _check_realize_out(requested, out)
+        if out.dtype != requested.dtype:
+            root = requested.astype(out.dtype)
+    if root._data is not None and not force_recompute:
+        return _result(_as_numpy_shape(root), out)
+
+    bound = None
+    if out is not None:
+        root, bound = _prepare_output(root, out)
+
+    source = root
+    while source._node is not None and source._node.op == "reshape":
+        if source._data is not None and not force_recompute:
+            break
+        source = source._node.inputs[0]
+    if source is not root:
+        realize(source, force_recompute=force_recompute)
+        root._data = _seal_ndarray(np.reshape(source._data, root.meta.buffer_shape))
+        return _result(_as_numpy_shape(root), out)
+
+    values: Dict[int, np.ndarray] = {}
+    op_arrays: List[Array] = []
+    done: set[int] = set()
+    visiting: set[int] = set()
+    stack: List[Array] = [root]
+    while stack:
+        current = stack[-1]
+        tid = id(current)
+        if tid in done:
+            stack.pop()
+            continue
+        if current._node is None:
+            if current._data is None:
+                raise ValueError("source Array has no data")
+            values[tid] = current._data
+            done.add(tid)
+            stack.pop()
+            continue
+        if tid not in visiting:
+            visiting.add(tid)
+            for inp in reversed(current._node.inputs):
+                inp_id = id(inp)
+                if inp_id in visiting and inp_id not in done:
+                    raise ValueError("cycle detected in compute graph")
+                if inp_id not in done:
+                    stack.append(inp)
+            continue
+        op_arrays.append(current)
+        if current._data is not None and not force_recompute:
+            values[tid] = current._data
+        visiting.remove(tid)
+        done.add(tid)
+        stack.pop()
+    if not op_arrays:
+        return _result(_as_numpy_shape(root), out)
+
+    _run_op_arrays(op_arrays, values, root, output=bound)
+
+    root_pixels = values.get(id(root))
+    if root_pixels is None:
+        raise RuntimeError("realize finished without materializing root")
+    if bound is None and root is requested:
+        root._data = _seal_ndarray(root_pixels)
+        return _result(_as_numpy_shape(root), out)
+    if force_recompute:
+        requested._data = None
+    if bound is not None:
+        return out
+    return _result(root_pixels.reshape(root.meta.shape), out)
+
+
+def _as_numpy_shape(array: Array) -> np.ndarray:
+    """``array``'s cached buffer in its NumPy shape: ``(N,)`` for a 1D array."""
+    assert array._data is not None
+    if array.meta.is_1d:
+        return array._data.reshape(array.meta.shape)
+    return array._data
+
+
+def _result(pixels: np.ndarray, out: Optional[np.ndarray]) -> np.ndarray:
+    """``pixels``, or ``out`` with ``pixels`` copied into it. ``pixels``
+    has ``out``'s dtype."""
+    if out is None:
+        return pixels
+    np.copyto(out, pixels)
+    return out
+
+
+def _check_realize_out(root: Array, out: np.ndarray) -> None:
+    """Raise unless ``out`` can receive ``root``'s pixels."""
+    if not isinstance(out, np.ndarray):
+        raise TypeError("realize out= must be a numpy ndarray")
+    if out.shape != root.shape:
+        raise ValueError(
+            f"realize out= shape {out.shape} does not match result shape {root.shape}"
+        )
+    if not out.flags.writeable:
+        raise ValueError("realize out= array is read-only")
+    if out.dtype != root.dtype:
+        if not np.can_cast(root.dtype, out.dtype, casting="same_kind"):
+            raise TypeError(
+                f"realize out= cannot cast {root.dtype} to {out.dtype} "
+                "with casting 'same_kind'"
+            )
+        supported_dtype(out.dtype)
+
+
+def _prepare_output(root: Array, out: np.ndarray) -> Tuple[Array, Optional[np.ndarray]]:
+    """The graph to run and the buffer the engine writes.
+
+    The buffer is ``out`` when the engine can bind it, or the buffer under
+    ``out`` that ``bound_output`` finds. ``None`` means the engine writes
+    its own buffer and the pixels are copied into ``out``.
+    """
+    if _engine_can_write(root.meta, out):
+        return root, out
+    from .core.binding import bound_output
+
+    laid = bound_output(root, out)
+    return laid if laid is not None else (root, None)
+
+
+def _engine_can_write(meta: ArrayMeta, out: np.ndarray) -> bool:
+    """True when the engine can write ``out`` as ``meta``'s buffer.
+
+    ``out`` has to have ``meta``'s buffer shape and dtype. A 1D result's
+    buffer is ``(1, N)``, so an ``(N,)`` ``out`` is copied into instead.
+    """
+    if out.dtype != meta.dtype or tuple(out.shape) != meta.buffer_shape:
+        return False
+    from .core.binding import is_bindable
+
+    return is_bindable(out, meta.channel_axis)

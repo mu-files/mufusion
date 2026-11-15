@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from conftest import DNG_VALIDATE_PATH, compute_diff_stats, run_dng_validate
 
-from muraw.array import Array
+from mufusion._array import Array
 from muraw.dngio import DngFile, IfdDataSpec, IfdPageSpec, SubFileType, write_dng
 from muraw.raw_render import DemosaicAlgorithm
 

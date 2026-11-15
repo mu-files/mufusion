@@ -11,9 +11,9 @@ import numpy as np
 from numpy.typing import DTypeLike
 
 # Package imports
-import muimage as mi
+import mufusion as mu
 
-from .array import Array, ArrayLike, supported_dtype
+from mufusion._array import Array, ArrayLike, supported_dtype
 from .common import PerfTimer, enum_display_name
 from .deps import cv2_proxy as cv2
 from .splines import LUT, ColorSpace, ColorSpaceLUT, CubicSpline
@@ -127,7 +127,7 @@ def mono_lut(
     if dst_bits is None:
         dst_bits = -1 if dest.kind == "f" else (8 if dest == np.uint8 else 16)
 
-    return mi.mono_lut(
+    return mu.mono_lut(
         t,
         lut=lut_array,
         src_bits=int(src_bits),
@@ -322,7 +322,7 @@ def rgb_transform(
             raise ValueError(f"matrix must be (3, 3), got shape {matrix.shape}")
         matrix = np.asarray(matrix, dtype=np.float32)
 
-    return mi.rgb_transform(
+    return mu.rgb_transform(
         t,
         input_lut=input_lut_array,
         matrix=matrix,
@@ -354,7 +354,7 @@ def rgb_clip_and_transform(
     if matrix.shape != (3, 3):
         raise ValueError(f"Matrix must be (3, 3), got {matrix.shape}")
 
-    return mi.rgb_clip_and_transform(
+    return mu.rgb_clip_and_transform(
         t,
         clip_max=np.asarray(clip_max, dtype=np.float32),
         matrix=np.asarray(matrix, dtype=np.float32),
@@ -406,16 +406,16 @@ def _demosaic_vng_rcd_opencv(
     ``VNG`` needs uint16 input and ``RCD`` float32; ``OPENCV_EA`` needs uint8
     or uint16. The caller (``demosaic``) converts to them.
     For ``BILINEAR``, ``EA`` and ``EA_FAST`` use the engine op
-    ``mi.cfa_demosaic``. ``OPENCV_EA`` stays here for quality comparison
+    ``mu.cfa_demosaic``. ``OPENCV_EA`` stays here for quality comparison
     against the engine's EA.
 
     ``cfa_pattern`` is at the first sample of ``cfa``'s canvas, as for
-    ``mi.cfa_demosaic``.
+    ``mu.cfa_demosaic``.
     """
     if algorithm in ("BILINEAR", "EA", "EA_FAST"):
         raise ValueError(
             f"_demosaic_vng_rcd_opencv does not run {algorithm}; "
-            f"use mi.cfa_demosaic(algorithm={algorithm.lower()!r})"
+            f"use mu.cfa_demosaic(algorithm={algorithm.lower()!r})"
         )
 
     if isinstance(cfa, Array):
@@ -543,7 +543,7 @@ def demosaic(
         DemosaicAlgorithm.EA,
         DemosaicAlgorithm.EA_FAST,
     ):
-        rgb = mi.cfa_demosaic(
+        rgb = mu.cfa_demosaic(
             t, cfa_pattern=cfa_pattern, algorithm=algorithm.value.lower()
         )
         return rgb.convert_type(out_dtype, clip_max=clip_max)
@@ -569,7 +569,7 @@ def demosaic(
 # DNG SDK Port (Python + C++ Extension)
 # =============================================================================
 # Everything below is a port of the Adobe DNG SDK 1.7.1 color pipeline.
-# Engine kernels via muimage / muraw.engines.core._engine_load.
+# Engine kernels via mufusion / mufusion._engines.core._engine_load.
 #
 # Key SDK source files referenced:
 #   - dng_color_spec.cpp: SetWhiteXY(), NeutralToXY(), FindXYZtoCamera()
@@ -2672,7 +2672,7 @@ def _merge_map_polynomial_opcodes(
 
     Files commonly hold one MapPolynomial per color plane with the same area,
     pitch, and degree. The joined opcode covers all their planes and holds one
-    coefficient set per plane, so it runs as one ``mi.map_polynomial`` node.
+    coefficient set per plane, so it runs as one ``mu.map_polynomial`` node.
     """
 
     def joins(prev: dict[str, Any], opcode: dict[str, Any]) -> bool:
@@ -2707,7 +2707,7 @@ def _merge_map_polynomial_opcodes(
 
 
 def _apply_gain_map_opcode(x: Array, opcode: dict[str, Any]) -> Array:
-    """A parsed GainMap opcode as one ``mi.apply_gain_map`` node.
+    """A parsed GainMap opcode as one ``mu.apply_gain_map`` node.
 
     DNG places map sample ``(i, j)`` at ``origin + spacing * index`` in
     fractions of the image, measured from pixel centers; in canvas pixels
@@ -2717,8 +2717,8 @@ def _apply_gain_map_opcode(x: Array, opcode: dict[str, Any]) -> Array:
     """
     _, _, canvas_width, canvas_height = x.meta.canvas
     area = opcode["area"]
-    gains = mi.Array(np.asarray(opcode["gain_values"], dtype=np.float32))
-    return mi.apply_gain_map(
+    gains = mu.Array(np.asarray(opcode["gain_values"], dtype=np.float32))
+    return mu.apply_gain_map(
         x,
         gains,
         map_x0=float(opcode["origin_h"]) * canvas_width - 0.5,
@@ -2745,8 +2745,8 @@ VIGNETTE_MAP_SPACING = 8
 def _fix_vignette_opcode(
     x: Array, opcode: dict[str, Any], map_spacing: int = VIGNETTE_MAP_SPACING
 ) -> Array:
-    """A parsed FixVignetteRadial opcode as an ``mi.radial_polynomial`` gain
-    map and an ``mi.apply_gain_map`` node.
+    """A parsed FixVignetteRadial opcode as an ``mu.radial_polynomial`` gain
+    map and an ``mu.apply_gain_map`` node.
 
     The gain is ``1 + k0 r^2 + k1 r^4 + ...``, with at most five ``k``, and
     the result is clamped to [0, 1]. ``r`` is the distance from the optical
@@ -2780,7 +2780,7 @@ def _fix_vignette_opcode(
     step = int(map_spacing)
     map_width = (canvas_width - 1) // step + 2
     map_height = (canvas_height - 1) // step + 2
-    gain_map = mi.radial_polynomial(
+    gain_map = mu.radial_polynomial(
         (map_height, map_width),
         coefficients=[1.0, *params],
         center_x=center_col - 0.5,
@@ -2789,7 +2789,7 @@ def _fix_vignette_opcode(
         spacing_x=float(step),
         spacing_y=float(step),
     )
-    return mi.apply_gain_map(
+    return mu.apply_gain_map(
         x,
         gain_map,
         map_x0=0.0,
@@ -2874,7 +2874,7 @@ def apply_opcodes(
                 tangential_list.append(p["tangential"])
             radial_per_plane = np.array(radial_list, dtype=np.float64)
             tangential_per_plane = np.array(tangential_list, dtype=np.float64)
-            x = mi.warp_rectilinear(
+            x = mu.warp_rectilinear(
                 x,
                 radial_params=radial_per_plane.reshape(-1),
                 num_planes=int(num_planes),
@@ -2891,7 +2891,7 @@ def apply_opcodes(
         elif opcode_type == "MapPolynomial":
             coefficients = opcode["coefficients"].astype(np.float32)
             area = opcode["area"]
-            x = mi.map_polynomial(
+            x = mu.map_polynomial(
                 x,
                 top=int(area["top"]),
                 left=int(area["left"]),
@@ -2986,7 +2986,7 @@ def apply_opcodes_cfa(
             logger.debug(
                 f"FixBadPixelsConstant: constant={constant}, bayer_phase={bayer_phase}"
             )
-            x = mi.cfa_fix_bad_pixels_constant(
+            x = mu.cfa_fix_bad_pixels_constant(
                 x,
                 constant=int(constant),
                 bayer_phase=int(bayer_phase),
@@ -3016,7 +3016,7 @@ def apply_opcodes_cfa(
                 f"MapPolynomial CFA: area={area}, degree={opcode['degree']}, "
                 f"coeffs={coefficients}"
             )
-            x = mi.map_polynomial(
+            x = mu.map_polynomial(
                 x,
                 top=int(area["top"]),
                 left=int(area["left"]),
@@ -4085,9 +4085,9 @@ def _linearize(
         if linearization_table is not None and len(linearization_table) > 0:
             lin = np.asarray(linearization_table, dtype=np.int32).reshape(-1)
         if samples_per_pixel == 1:
-            normalize_raw = mi.cfa_normalize_raw
+            normalize_raw = mu.cfa_normalize_raw
         elif samples_per_pixel == 3:
-            normalize_raw = mi.rgb_normalize_raw
+            normalize_raw = mu.rgb_normalize_raw
         else:
             raise ValueError(
                 f"normalize: expected 1 or 3 samples per pixel, got {samples_per_pixel}"
@@ -4477,14 +4477,14 @@ def _render_camera_rgb(
             # either way the map is indexed by hue and saturation only.
             map_flat = np.asarray(hue_sat_map, dtype=np.float32).reshape(-1)
             if val_divs < 2:
-                rgb_t = mi.rgb_apply_hue_sat_map(
+                rgb_t = mu.rgb_apply_hue_sat_map(
                     rgb_t,
                     map_data=map_flat,
                     hue_divs=int(hue_divs),
                     sat_divs=int(sat_divs),
                 )
             else:
-                rgb_t = mi.rgb_apply_hue_sat_val_map(
+                rgb_t = mu.rgb_apply_hue_sat_val_map(
                     rgb_t,
                     map_data=map_flat,
                     hue_divs=int(hue_divs),
@@ -4543,9 +4543,9 @@ def _render_camera_rgb(
                     byteorder=system_byteorder,
                 )
                 pgtm_step.close()
-                rgb_t = mi.rgb_apply_gain_table_map(
+                rgb_t = mu.rgb_apply_gain_table_map(
                     rgb_t,
-                    mi.Array(pgtm["gains"]),
+                    mu.Array(pgtm["gains"]),
                     origin_x=float(pgtm["origin_h"]),
                     origin_y=float(pgtm["origin_v"]),
                     spacing_x=float(pgtm["spacing_h"]),
@@ -4657,14 +4657,14 @@ def _render_camera_rgb(
             )
             look_flat = np.asarray(look_table, dtype=np.float32).reshape(-1)
             if look_val_divs < 2:
-                rgb_exposed = mi.rgb_apply_hue_sat_map(
+                rgb_exposed = mu.rgb_apply_hue_sat_map(
                     rgb_ramped,
                     map_data=look_flat,
                     hue_divs=int(look_hue_divs),
                     sat_divs=int(look_sat_divs),
                 )
             else:
-                rgb_exposed = mi.rgb_apply_hue_sat_val_map(
+                rgb_exposed = mu.rgb_apply_hue_sat_val_map(
                     rgb_ramped,
                     map_data=look_flat,
                     hue_divs=int(look_hue_divs),
@@ -4785,7 +4785,7 @@ def _render_camera_rgb(
         if orientation is None:
             orientation = _get_ifd0_tag(ifd0_tags, raw_ifd_tags, "Orientation")
         if orientation is not None:
-            result = mi.orientation(result, orientation=int(orientation))
+            result = mu.orientation(result, orientation=int(orientation))
 
         return result
 
@@ -4956,7 +4956,7 @@ def _render_camera_monochrome(
         if orientation is None:
             orientation = _get_ifd0_tag(ifd0_tags, raw_ifd_tags, "Orientation")
         if orientation is not None:
-            result = mi.orientation(result, orientation=int(orientation))
+            result = mu.orientation(result, orientation=int(orientation))
 
         return result
 

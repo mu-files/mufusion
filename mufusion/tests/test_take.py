@@ -1,0 +1,361 @@
+"""take: ``np.take`` and index-array indexing on every axis.
+
+The rows and the columns are the ``take`` op; the channels and the
+frames of a stack are a ``view`` that reads each index.
+
+Value checks call the same function with ``mu`` and with ``np``.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+import mufusion as mu
+from mufusion._array import Array
+
+
+def _image(shape, dtype):
+    rng = np.random.default_rng(5)
+    if np.dtype(dtype).kind == "f":
+        return rng.random(shape).astype(dtype)
+    return rng.integers(0, 256, shape).astype(dtype)
+
+
+def _take(lib, x, indices, axis, mode="raise"):
+    """``x`` at ``indices`` along ``axis``."""
+    return lib.take(x, indices, axis=axis, mode=mode)
+
+
+def _take_method_after_scale(lib, x):
+    """``x`` times 2, then columns 3, 0, 0 and rows 1, 1 with the method."""
+    return (x * np.float32(2.0)).take([3, 0, 0], axis=1).take([1, 1], axis=0)
+
+
+def _index(lib, x, key):
+    """``x[key]``."""
+    return x[key]
+
+
+def _rows_then_columns(lib, x, rows, cols):
+    """The rows ``rows`` of ``x``, then the columns ``cols`` of those."""
+    return x[rows][:, cols]
+
+
+def _nearest_resize(lib, x, scale):
+    """Nearest-neighbour resize of ``(H, W, ...)`` ``x`` by ``scale``."""
+    rows = ((np.arange(int(x.shape[0] * scale)) + 0.5) / scale).astype(np.intp)
+    cols = ((np.arange(int(x.shape[1] * scale)) + 0.5) / scale).astype(np.intp)
+    return x[rows][:, cols]
+
+
+FORWARD = [0, 1, 1, 3]
+REVERSED = [3, 2, 1, 0]
+SHUFFLED = [2, 0, 3, 1, 1]
+NEGATIVE = [-1, 0, -3]
+# np.take truncates float indices.
+FLOAT = [2.9, 0.5]
+
+
+@pytest.mark.parametrize("dtype", [np.uint8, np.float32])
+@pytest.mark.parametrize("indices", [FORWARD, REVERSED, SHUFFLED, NEGATIVE, FLOAT])
+@pytest.mark.parametrize(
+    "shape, axis",
+    [
+        ((5, 7), 0),
+        ((5, 7), 1),
+        ((4, 6, 4), 0),
+        ((4, 6, 4), 1),
+        ((4, 6, 4), 2),
+        ((4, 4, 6, 3), 0),
+        ((4, 4, 6, 3), 1),
+        ((4, 4, 6, 3), 2),
+        ((9,), 0),
+    ],
+)
+def test_take_matches_numpy(shape, axis, indices, dtype):
+    x = _image(shape, dtype)
+    got = _take(mu, mu.Array(x), indices, axis)
+    np.testing.assert_array_equal(got.realize(), _take(np, x, indices, axis))
+
+
+def _long_lists(width):
+    """Index lists into ``width`` columns, long enough for the kernel's
+    copies, its runs of one load and its gathered groups, in every order."""
+    rng = np.random.default_rng(9)
+    columns = np.arange(width)
+    return {
+        "random": rng.integers(0, width, width + 37),
+        "flip": columns[::-1],
+        "uneven_repeat": np.repeat(columns, rng.integers(1, 4, width))[: 2 * width],
+        "slices": np.concatenate(
+            [columns[40:140], columns[10:30][::-1], [7, 7, 7], columns[200:260]]
+        ),
+        "one_and_a_half": columns[(2 * np.arange(3 * width // 2)) // 3],
+    }
+
+
+# (dtype, channels) for pixels of 1, 2, 3, 4, 6, 8, 12 and 16 bytes.
+PIXELS = [
+    (np.uint8, 1),
+    (np.uint8, 2),
+    (np.uint8, 3),
+    (np.float32, 1),
+    (np.uint16, 3),
+    (np.uint16, 4),
+    (np.float32, 3),
+    (np.float32, 4),
+]
+
+
+@pytest.mark.parametrize("dtype, channels", PIXELS)
+@pytest.mark.parametrize(
+    "kind", ["random", "flip", "uneven_repeat", "slices", "one_and_a_half"]
+)
+@pytest.mark.parametrize("axis", [0, 1])
+def test_take_of_long_lists_matches_numpy(axis, kind, dtype, channels):
+    x = _image((300, 300, channels), dtype)
+    indices = _long_lists(300)[kind]
+    got = _take(mu, mu.Array(x), indices, axis)
+    np.testing.assert_array_equal(got.realize(), _take(np, x, indices, axis))
+
+
+@pytest.mark.parametrize("dtype, channels", PIXELS)
+@pytest.mark.parametrize("mode", ["clip", "wrap"])
+def test_take_of_long_out_of_range_lists_matches_numpy(mode, dtype, channels):
+    x = _image((40, 300, channels), dtype)
+    indices = np.random.default_rng(4).integers(-600, 900, 500)
+    got = _take(mu, mu.Array(x), indices, 1, mode)
+    np.testing.assert_array_equal(got.realize(), _take(np, x, indices, 1, mode))
+
+
+@pytest.mark.parametrize("axis", [0, 1, 2])
+def test_take_on_chw_matches_numpy(axis):
+    x = _image((4, 5, 6), np.float32)
+    got = _take(mu, Array(x, channel_axis=0), SHUFFLED, axis)
+    np.testing.assert_array_equal(got.realize(), _take(np, x, SHUFFLED, axis))
+
+
+@pytest.mark.parametrize("mode", ["clip", "wrap"])
+@pytest.mark.parametrize("axis", [0, 1, 2])
+def test_take_out_of_range_modes_match_numpy(axis, mode):
+    x = _image((3, 4, 3), np.float32)
+    indices = [-5, 7, 1, -1, 3]
+    got = _take(mu, mu.Array(x), indices, axis, mode)
+    np.testing.assert_array_equal(got.realize(), _take(np, x, indices, axis, mode))
+
+
+def test_take_with_no_axis_flattens():
+    x = _image((3, 4, 2), np.uint8)
+    got = _take(mu, mu.Array(x), [23, 0, 5, 5], None)
+    np.testing.assert_array_equal(got.realize(), _take(np, x, [23, 0, 5, 5], None))
+
+
+@pytest.mark.parametrize("axis", [0, 1, 2])
+def test_take_with_one_int_drops_the_axis(axis):
+    x = _image((3, 4, 3), np.float32)
+    got = _take(mu, mu.Array(x), 2, axis)
+    np.testing.assert_array_equal(got.realize(), _take(np, x, 2, axis))
+
+
+def test_take_method_on_a_lazy_input():
+    x = _image((4, 5, 3), np.float32)
+    got = _take_method_after_scale(mu, mu.Array(x))
+    np.testing.assert_allclose(
+        got.realize(), _take_method_after_scale(np, x), rtol=1e-6
+    )
+
+
+@pytest.mark.parametrize(
+    "indices, axis, mode, error",
+    [
+        ([0, 3], 0, "raise", IndexError),
+        ([-4], 1, "raise", IndexError),
+        ([0], 0, "bounce", ValueError),
+        ([0], 3, "raise", np.exceptions.AxisError),
+    ],
+)
+def test_take_rejects_what_numpy_rejects(indices, axis, mode, error):
+    x = _image((3, 3, 3), np.float32)
+    with pytest.raises(error):
+        _take(np, x, indices, axis, mode)
+    with pytest.raises(error):
+        _take(mu, mu.Array(x), indices, axis, mode)
+
+
+def test_take_with_an_index_array_of_two_axes_raises():
+    with pytest.raises(NotImplementedError, match="shape"):
+        _take(mu, mu.Array(_image((3, 3), np.float32)), [[0, 1], [1, 2]], 0)
+
+
+@pytest.mark.parametrize("axis", [0, 1, 2, None])
+def test_take_of_no_indices_is_empty(axis):
+    x = _image((3, 4, 2), np.float32)
+    got = _take(mu, mu.Array(x), [], axis)
+    np.testing.assert_array_equal(got.realize(), _take(np, x, [], axis))
+
+
+@pytest.mark.parametrize("dtype", [np.uint8, np.float32])
+@pytest.mark.parametrize(
+    "shape, key",
+    [
+        ((5, 7), [4, 0, 0]),
+        ((5, 7), (slice(None), [6, -1, 2])),
+        ((5, 7), np.array([1, 3])),
+        ((5, 7), np.array([True, False, True, True, False])),
+        ((5, 7), (slice(1, 4), np.array([0, 1, 0, 1, 1, 0, 1], dtype=bool))),
+        ((4, 6, 3), [3, 1]),
+        ((4, 6, 3), (slice(None), [5, 5, 0], slice(0, 2))),
+        ((4, 6, 3), (Ellipsis, [2, 0], slice(None))),
+        ((2, 4, 6, 3), (slice(None), [3, 0])),
+        ((9,), [8, 0, 4]),
+        ((9,), np.arange(9) % 2 == 0),
+        ((5, 7), 3),
+        ((5, 7), (slice(None), -2)),
+        ((4, 6, 3), (1, slice(1, 4))),
+        ((4, 6, 3), (2, 3)),
+        ((4, 6, 3), (slice(None), 4, 0)),
+        ((2, 4, 6, 3), (1, 2)),
+        ((5, 7), (None, [1, 2])),
+        ((4, 6, 3), np.array(2)),
+        ((4, 6, 3), (Ellipsis, np.array(1))),
+        ((4, 6, 3), (Ellipsis, np.array([True, False, True]))),
+        ((2, 4, 6, 3), np.array([False, True])),
+    ],
+)
+def test_index_with_an_index_array_or_int_on_rows_or_columns_matches_numpy(
+    shape, key, dtype
+):
+    x = _image(shape, dtype)
+    got = _index(mu, mu.Array(x), key)
+    np.testing.assert_array_equal(got.realize(), _index(np, x, key))
+
+
+@pytest.mark.parametrize(
+    "key", [[2, 0], (slice(None), [3, 3, 1]), (slice(None), slice(None), [4, 0])]
+)
+def test_index_with_an_index_array_on_chw_matches_numpy(key):
+    x = _image((3, 4, 5), np.float32)
+    got = _index(mu, Array(x, channel_axis=0), key)
+    np.testing.assert_array_equal(got.realize(), _index(np, x, key))
+
+
+def test_index_rows_then_columns_matches_numpy():
+    x = _image((6, 8, 3), np.float32)
+    got = _rows_then_columns(mu, mu.Array(x), [5, 0, 2], [7, 7, 1, 0])
+    np.testing.assert_array_equal(
+        got.realize(), _rows_then_columns(np, x, [5, 0, 2], [7, 7, 1, 0])
+    )
+
+
+@pytest.mark.parametrize("shape", [(10, 14), (10, 14, 3)])
+def test_nearest_resize_by_one_and_a_half_matches_numpy(shape):
+    x = _image(shape, np.uint8)
+    got = _nearest_resize(mu, mu.Array(x), 1.5)
+    np.testing.assert_array_equal(got.realize(), _nearest_resize(np, x, 1.5))
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        [0, 5],
+        (slice(None), [-8]),
+        (5, slice(None)),
+        np.array([True, False]),
+        (np.array([[True], [False], [True], [True], [False]]), np.array([[0, 1]])),
+        ([0, 1, 2], [0, 1]),
+    ],
+)
+def test_index_rejects_what_numpy_rejects(key):
+    x = _image((5, 7), np.float32)
+    with pytest.raises(IndexError):
+        _index(np, x, key)
+    with pytest.raises(IndexError):
+        _index(mu, mu.Array(x), key)
+
+
+@pytest.mark.parametrize(
+    "shape, key",
+    [
+        ((4, 5), ([0, 1], [2, 3])),
+        ((4, 5), np.array([[0, 1], [1, 2]])),
+        ((4, 5), (np.array([[0], [1]]), np.array([[2, 3]]).T)),
+        ((4, 5, 3), (1, slice(None), [0, 2])),
+        ((2, 4, 5, 3), ([0, 1], slice(None), slice(None), [0, 2])),
+        (
+            (2, 4, 5, 3),
+            (np.array([[0], [1]]), slice(None), slice(None), np.array([[0, 2]])),
+        ),
+    ],
+)
+def test_index_arrays_numpy_pairs_or_moves_raise(shape, key):
+    with pytest.raises(NotImplementedError):
+        _index(mu, mu.Array(_image(shape, np.float32)), key)
+
+
+@pytest.mark.parametrize("dtype", [np.uint8, np.float32])
+@pytest.mark.parametrize(
+    "shape, key",
+    [
+        ((5, 7), np.ix_([4, 0, 0, 2], [6, 1, 1])),
+        ((5, 7), np.ix_([3], [2])),
+        ((4, 6, 3), np.ix_([3, 1], [5, 5, 0])),
+        ((4, 6, 3), np.ix_([3, 1], [5, 5, 0], [2, 1, 0])),
+        ((4, 6, 3), np.ix_([0, 2], [1, 4]) + (1,)),
+        ((2, 4, 6, 3), np.ix_([1, 0], [3, 3], [0, 5, 2])),
+        ((2, 4, 6, 3), (1,) + np.ix_([3, 0], [2, 4])),
+        ((5, 7), (np.array([[4], [0]]), np.array([[1, 6, 6]]))),
+        ((5, 7), ([0, 2], 3)),
+        ((4, 6, 3), (slice(None), [0, 1], 2)),
+        ((4, 6, 3), ([0, 2], slice(None), 1)),
+    ],
+)
+def test_index_with_an_open_mesh_matches_numpy(shape, key, dtype):
+    x = _image(shape, dtype)
+    got = _index(mu, mu.Array(x), key)
+    np.testing.assert_array_equal(got.realize(), _index(np, x, key))
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        (slice(None),) + np.ix_([3, 0, 0], [4, 1]),
+        np.ix_([2, 0], [1, 1, 3], [4, 0]),
+    ],
+)
+def test_index_with_an_open_mesh_on_chw_matches_numpy(key):
+    x = _image((3, 4, 5), np.float32)
+    got = _index(mu, Array(x, channel_axis=0), key)
+    np.testing.assert_array_equal(got.realize(), _index(np, x, key))
+
+
+def test_index_with_an_open_mesh_removes_bad_lines():
+    raw = _image((6, 8), np.uint16)
+    bad_rows = np.isin(np.arange(6), [2])
+    bad_cols = np.isin(np.arange(8), [0, 5])
+    key = np.ix_(~bad_rows, ~bad_cols)
+    got = _index(mu, mu.Array(raw), key)
+    np.testing.assert_array_equal(got.realize(), _index(np, raw, key))
+
+
+def test_index_with_an_open_mesh_crops_to_a_mask_box():
+    image = _image((6, 8, 3), np.float32)
+    valid = np.zeros((6, 8), dtype=bool)
+    valid[1:4, 2:7] = True
+    key = np.ix_(valid.any(axis=1), valid.any(axis=0))
+    got = _index(mu, mu.Array(image), key)
+    np.testing.assert_array_equal(got.realize(), _index(np, image, key))
+
+
+def test_index_with_an_open_mesh_is_one_take_node():
+    source = mu.Array(_image((5, 7, 3), np.float32))
+    got = source[np.ix_([4, 0], [6, 1, 1])]
+    assert got._node.op == "take"
+    assert got._node.inputs == (source,)
+    np.testing.assert_array_equal(got._node.attrs["row_indices"], [4, 0])
+    np.testing.assert_array_equal(got._node.attrs["col_indices"], [6, 1, 1])
+
+
+def test_index_of_every_axis_with_an_int_raises():
+    with pytest.raises(NotImplementedError, match="scalar"):
+        _index(mu, mu.Array(_image((4, 5), np.float32)), (1, 2))

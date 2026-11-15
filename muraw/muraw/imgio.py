@@ -10,7 +10,7 @@ from typing import IO, Any, Callable, Iterable
 import numpy as np
 from numpy.typing import DTypeLike
 
-from .array import Array
+from mufusion._array import Array
 from .deps import (
     cv2_proxy as cv2,
 )

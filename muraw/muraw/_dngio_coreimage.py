@@ -16,7 +16,7 @@ from numpy.typing import DTypeLike
 from .splines import CubicSpline
 
 if TYPE_CHECKING:
-    from .array import Array
+    from mufusion._array import Array
     from .dngio import DngFile
 
 logger = logging.getLogger(__name__)
@@ -464,7 +464,7 @@ def decode_dng_coreimage(
 
         # Import raw_render for parameter extraction
         from . import raw_render
-        from .array import Array
+        from mufusion._array import Array
 
         # Build rendering parameters dict from XMP and overrides (filters out NOOP values)
         extracted_params = raw_render.supported_xmp_to_dict(dng_file) if use_xmp else {}

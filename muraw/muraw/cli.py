@@ -62,7 +62,7 @@ def cli(verbose, timing):
     )
 
     if timing != "off":
-        from .engines import set_engine_timing
+        from mufusion._engines import set_engine_timing
 
         set_engine_timing(timing)
 
