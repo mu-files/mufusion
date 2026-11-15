@@ -1,4 +1,4 @@
-# Ruff for the mu-image repo (mufusion, muraw and mu-dng-converter).
+# Ruff for the mufusion repo (mufusion, muraw and mu-dng-converter).
 # CI installs ruff 0.17.0. The formatter is the Black-compatible ruff
 # format: 88 columns, double quotes, target Python 3.12.
 

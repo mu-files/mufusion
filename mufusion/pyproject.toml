@@ -41,8 +41,8 @@ test = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/mu-files/mu-image"
-Repository = "https://github.com/mu-files/mu-image"
+Homepage = "https://github.com/mu-files/mufusion"
+Repository = "https://github.com/mu-files/mufusion"
 
 [tool.setuptools]
 packages = [

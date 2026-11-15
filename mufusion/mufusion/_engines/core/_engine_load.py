@@ -2,7 +2,7 @@
 # Copyright (c) 2026 mu-files
 """Load the platform-tagged abi3 ``_core_engine`` extension from ``_binaries/``.
 
-Built in private mu-image-engine (Rust/PyO3 + linked C++) and synced via
+Built in private mufusion-engine (Rust/PyO3 + linked C++) and synced via
 copy_to_public.sh. One binary per platform (abi3, Python >= 3.12).
 
 This module is the Python loader only; the extension filename / PyInit symbol
@@ -53,7 +53,7 @@ def _load():
     if not path.is_file():
         raise ImportError(
             f"Native CoreEngine extension not found: {path}\n"
-            "Build in mu-image-engine and run ./copy_to_public.sh local|ci"
+            "Build in mufusion-engine and run ./copy_to_public.sh local|ci"
         )
     # Last path component must be `_core_engine` so PyInit__core_engine is used.
     mod_name = "mufusion._engines.core._binaries._core_engine"

@@ -65,8 +65,8 @@ coreimage = [
 muraw = "muraw.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/mu-files/mu-image"
-Repository = "https://github.com/mu-files/mu-image"
+Homepage = "https://github.com/mu-files/mufusion/tree/main/muraw"
+Repository = "https://github.com/mu-files/mufusion"
 
 [tool.setuptools]
 packages = ["muraw"]
