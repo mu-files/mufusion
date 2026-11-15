@@ -40,7 +40,7 @@ if TYPE_CHECKING:
     from ._engines.graph import OpNode
 
 
-# The dtypes an Array can hold. Their names match the native ``MuImgDType`` names.
+# The dtypes an Array can hold.
 SUPPORTED_DTYPES = tuple(
     np.dtype(t) for t in (np.float32, np.float16, np.uint8, np.uint16, np.bool_)
 )
