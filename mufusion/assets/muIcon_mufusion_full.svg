@@ -240,9 +240,10 @@
     stroke-width="4" points="0,0 30,0 15,-24"/>
 </g>
 
-<!-- Project name text below the logo -->
-<g transform="scale(1.13, 1.01) translate(260, 555)">
-  <text x="0" y="0" font-family="'Quicksand', sans-serif" font-size="168" font-weight="700" text-anchor="middle" letter-spacing="0" fill="url(#textGradient)">image</text>
+<!-- Project name text below the logo. x and textLength put the ink of
+     "fusion" in Helvetica Bold from x = 31.56 to 568.91, the span of "mu". -->
+<g transform="scale(1, 1.01)">
+  <text x="30.2" y="555" textLength="550.89" lengthAdjust="spacingAndGlyphs" font-family="'Quicksand', sans-serif" font-size="168" font-weight="700" letter-spacing="0" fill="url(#textGradient)">fusion</text>
 </g>
 
 </svg>

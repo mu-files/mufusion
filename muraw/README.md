@@ -1,5 +1,5 @@
 <p align="center" style="background-color: white; padding: 20px 0; margin: 0 0 30px 0;">
-  <img src="https://raw.githubusercontent.com/mu-files/mufusion/main/muraw/assets/muIcon_muimg_full.png" alt="muraw logo" width="400">
+  <img src="https://raw.githubusercontent.com/mu-files/mufusion/main/mufusion/assets/muIcon_mufusion_full.png" alt="muraw logo" width="400">
 </p>
 
 # muraw
