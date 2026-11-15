@@ -28,6 +28,18 @@ def _clip(lib, x, a_min, a_max):
     return lib.clip(x, a_min, a_max)
 
 
+def _signed_zeros(function, x1, x2, result):
+    """``result`` with the zero mu gives where ``x1`` and ``x2`` are both
+    zero: ``-0`` for ``minimum`` when either is ``-0``, and ``+0`` for
+    ``maximum`` when either is ``+0``. NumPy does not specify which zero
+    it returns, and its answer differs between dtypes and CPUs."""
+    negative = np.signbit(x1) | np.signbit(x2)
+    if function is _maximum:
+        negative = np.signbit(x1) & np.signbit(x2)
+    zero = np.where(negative, -0.0, 0.0).astype(result.dtype)
+    return np.where((x1 == 0) & (x2 == 0), zero, result)
+
+
 def _check(got, want):
     assert got.dtype == want.dtype
     realized = got.realize()
@@ -122,10 +134,8 @@ def test_float_minimum_and_maximum_keep_nan_and_signed_zero(dtype):
     with np.errstate(invalid="ignore"):
         for function in (_minimum, _maximum):
             got = function(mu, mu.Array(first), mu.Array(second))
-            # NumPy's float16 minimum of +0 and -0 returns the first
-            # zero. The op returns -0, NumPy's float32 result narrowed.
-            precise = function(np, first.astype(np.float32), second.astype(np.float32))
-            _check(got, precise.astype(dtype))
+            want = _signed_zeros(function, first, second, function(np, first, second))
+            _check(got, want)
 
 
 def test_minimum_broadcasts_a_channel():
@@ -194,10 +204,16 @@ def test_clip_none_bounds_and_identity():
     values = np.array([-1.0, -0.0, 0.0, 2.0], dtype=np.float32)
     array = mu.Array(values)
     assert mu.clip(array) is array
-    _check(mu.clip(array, None, 0), np.clip(values, None, 0))
-    # A lower bound of +0 turns -0 into +0. NumPy's clip keeps -0.
-    bounded = np.minimum(np.maximum(values, np.float32(0)), np.float32(1))
-    _check(mu.clip(array, min=0, max=1), bounded)
+    zero = np.float32(0)
+    _check(
+        mu.clip(array, None, 0),
+        _signed_zeros(_minimum, values, zero, np.clip(values, None, 0)),
+    )
+    # A lower bound of +0 turns -0 into +0.
+    _check(
+        mu.clip(array, min=0, max=1),
+        _signed_zeros(_maximum, values, zero, np.clip(values, 0, 1)),
+    )
 
 
 def test_clip_array_bounds_broadcast():

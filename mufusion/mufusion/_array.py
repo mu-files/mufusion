@@ -600,7 +600,9 @@ def negative(x: ArrayLike) -> "Array":
 def minimum(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
     """NumPy's ``minimum``, broadcast. The result has the inputs' dtype.
     A NaN on either side gives NaN, and the minimum of ``+0`` and ``-0``
-    is ``-0``. NumPy's float16 result returns the first zero instead. A Python float beside an integer array is float32, where
+    is ``-0``. NumPy does not specify which zero it returns, and its
+    answer differs between dtypes and CPUs. A Python float beside an
+    integer array is float32, where
     NumPy gives float64. A Python integer that does not fit an unsigned
     array raises ``OverflowError``."""
     return _arithmetic_function(_minimum, x1, x2)
@@ -609,7 +611,9 @@ def minimum(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
 def maximum(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
     """NumPy's ``maximum``, broadcast. The result has the inputs' dtype.
     A NaN on either side gives NaN, and the maximum of ``+0`` and ``-0``
-    is ``+0``. NumPy's float16 result returns the first zero instead. A Python float beside an integer array is float32, where
+    is ``+0``. NumPy does not specify which zero it returns, and its
+    answer differs between dtypes and CPUs. A Python float beside an
+    integer array is float32, where
     NumPy gives float64. A Python integer that does not fit an unsigned
     array raises ``OverflowError``."""
     return _arithmetic_function(_maximum, x1, x2)
@@ -647,7 +651,7 @@ def clip(
     on that edge, as NumPy does. A Python float beside an integer array
     is float32, where NumPy gives float64. ``out`` is not supported;
     ``realize(out=)`` writes the result. A lower bound of ``+0`` turns
-    ``-0`` into ``+0``, where NumPy's clip keeps ``-0``, because the
+    ``-0`` into ``+0``, where NumPy's clip may keep ``-0``, because the
     result is ``maximum`` then ``minimum``.
     """
     if out is not None:
