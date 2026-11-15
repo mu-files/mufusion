@@ -32,16 +32,27 @@ except ImportError:
 # =============================================================================
 
 # ZWO ASI676MC gain table: (camera_gain, e-/ADU)
-_ASI676MC_GAIN_TABLE = np.array([
-    [0, 2.55], [50, 1.50], [100, 0.85],
-    [150, 0.50], [200, 0.30],
-])
+_ASI676MC_GAIN_TABLE = np.array(
+    [
+        [0, 2.55],
+        [50, 1.50],
+        [100, 0.85],
+        [150, 0.50],
+        [200, 0.30],
+    ]
+)
 
 # ZWO ASI676MC blue white balance table: (wb_b, balance)
-_ASI676MC_WB_BLUE_TABLE = np.array([
-    [1, 0.01], [50, 0.59], [55, 0.73],
-    [65, 0.87], [75, 1.00], [100, 1.34],
-])
+_ASI676MC_WB_BLUE_TABLE = np.array(
+    [
+        [1, 0.01],
+        [50, 0.59],
+        [55, 0.73],
+        [65, 0.87],
+        [75, 1.00],
+        [100, 1.34],
+    ]
+)
 
 
 def _gain_to_iso(gain: float, gain_table: np.ndarray) -> int:
@@ -55,16 +66,24 @@ def _build_camera_tags(tags, header) -> None:
 
     if instrume == "ZWO ASI676MC":
         if gain is not None:
-            tags.add_tag("ISOSpeedRatings", _gain_to_iso(float(gain), _ASI676MC_GAIN_TABLE))
+            tags.add_tag(
+                "ISOSpeedRatings", _gain_to_iso(float(gain), _ASI676MC_GAIN_TABLE)
+            )
         wb_r = header.get("WB_RED")
         wb_b = header.get("WB_BLUE")
         if wb_r is not None and wb_b is not None:
             wb_r_neutral, wb_b_neutral = 80, 100
             red_balance = float(wb_r) / float(wb_r_neutral)
             blue_balance = float(
-                np.interp(wb_b, _ASI676MC_WB_BLUE_TABLE[:, 0], _ASI676MC_WB_BLUE_TABLE[:, 1])
+                np.interp(
+                    wb_b, _ASI676MC_WB_BLUE_TABLE[:, 0], _ASI676MC_WB_BLUE_TABLE[:, 1]
+                )
             ) / float(
-                np.interp(wb_b_neutral, _ASI676MC_WB_BLUE_TABLE[:, 0], _ASI676MC_WB_BLUE_TABLE[:, 1])
+                np.interp(
+                    wb_b_neutral,
+                    _ASI676MC_WB_BLUE_TABLE[:, 0],
+                    _ASI676MC_WB_BLUE_TABLE[:, 1],
+                )
             )
             tags.add_tag("AnalogBalance", [red_balance, 1.0, blue_balance])
     else:
@@ -92,6 +111,7 @@ def build_metadata_tags(header: dict, cfa_data: np.ndarray):
     date_obs = header.get("DATE-OBS")
     if date_obs is not None:
         from datetime import datetime as _dt
+
         for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
             try:
                 tags.add_time_tags(_dt.strptime(date_obs.strip(), fmt), "original")
@@ -133,6 +153,7 @@ def build_metadata_tags(header: dict, cfa_data: np.ndarray):
 # ZWO SDK Initialization
 # =============================================================================
 
+
 def find_sdk_library() -> str | None:
     """Search for the ZWO ASI SDK library in common locations."""
     # Check environment variable first
@@ -157,6 +178,7 @@ def find_sdk_library() -> str | None:
 # =============================================================================
 # DNG Metadata Builder
 # =============================================================================
+
 
 def build_metadata(camera_info: dict, metadata: dict, cfa_data: np.ndarray):
     """Build DNG metadata tags by constructing a FITS-like header and
@@ -189,9 +211,17 @@ def build_metadata(camera_info: dict, metadata: dict, cfa_data: np.ndarray):
 # DNG Writer
 # =============================================================================
 
-def write_dng(cfa_data: np.ndarray, output: Path, tags, bayer_pattern: str,
-              compression, compression_args=None, num_workers=1,
-              preview: bool = False):
+
+def write_dng(
+    cfa_data: np.ndarray,
+    output: Path,
+    tags,
+    bayer_pattern: str,
+    compression,
+    compression_args=None,
+    num_workers=1,
+    preview: bool = False,
+):
     """Write CFA data as DNG using muraw.
 
     Args:
@@ -204,11 +234,15 @@ def write_dng(cfa_data: np.ndarray, output: Path, tags, bayer_pattern: str,
         num_workers: Number of compression workers
         preview: Generate JPEG preview
     """
-    from muraw.dngio import (
-        write_dng_from_array, IfdDataSpec, PageEncoding,
-        PreviewParams, PreviewScale,
-    )
     from tifffile import COMPRESSION
+
+    from muraw.dngio import (
+        IfdDataSpec,
+        PageEncoding,
+        PreviewParams,
+        PreviewScale,
+        write_dng_from_array,
+    )
 
     encoding = PageEncoding(
         compression=compression,
@@ -251,8 +285,7 @@ _BAYER_PATTERN_MAP = {
 }
 
 
-def capture(exposure_ms: float, gain: int, offset: int,
-            wb_r: int, wb_b: int) -> tuple:
+def capture(exposure_ms: float, gain: int, offset: int, wb_r: int, wb_b: int) -> tuple:
     """Initialize camera, capture one raw frame, return data and metadata.
 
     Args:
@@ -269,8 +302,10 @@ def capture(exposure_ms: float, gain: int, offset: int,
     sdk_path = find_sdk_library()
     if not sdk_path:
         print("ERROR: ZWO ASI SDK library not found.", file=sys.stderr)
-        print("  Set ZWO_ASI_LIB environment variable or install ASIStudio.",
-              file=sys.stderr)
+        print(
+            "  Set ZWO_ASI_LIB environment variable or install ASIStudio.",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     asi.init(sdk_path)
@@ -370,6 +405,7 @@ def capture(exposure_ms: float, gain: int, offset: int,
 # Main
 # =============================================================================
 
+
 def main():
     parser = argparse.ArgumentParser(
         description="Capture a single raw frame from a ZWO ASI camera and save as DNG"
@@ -422,7 +458,8 @@ def main():
         help="Generate JPEG preview in the DNG",
     )
     parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         type=Path,
         default=Path("capture.dng"),
         help="Output DNG path (default: capture.dng)",

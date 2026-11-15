@@ -56,7 +56,7 @@ muraw    jxl_lossy+preview      w=4    943.6±3.2   1.06     1.37   17.2x
 ### Setup
 
 ```bash
-cd mu-rasppi
+cd mufusion/muraspi
 
 # Create virtual environment with system site packages (for picamera2)
 python3 -m venv --system-site-packages venv
@@ -69,7 +69,7 @@ venv/bin/pip install -e ".[pi]"
 
 ```bash
 # Single capture (default)
-venv/bin/python picamera2_capture.py --mode single --preview -o capture.dng
+venv/bin/python picamera2_capture.py --mode single --preview --output capture.dng
 
 # With compression
 venv/bin/python picamera2_capture.py --mode single --compression jxl_lossless --workers 4 --preview

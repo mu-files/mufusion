@@ -1,5 +1,5 @@
-# Ruff for the mufusion repo (mufusion, muraw, muraw-demosaic and
-# mu-dng-converter).
+# Ruff for the mufusion repo (mufusion, muraw, muraw-demosaic,
+# mu-dng-converter and muraspi).
 # CI installs ruff 0.17.0. The formatter is the Black-compatible ruff
 # format: 88 columns, double quotes, target Python 3.12.
 
@@ -7,7 +7,7 @@ required-version = ">=0.17"
 
 target-version = "py312"
 line-length = 88
-src = ["mufusion", "muraw", "muraw-demosaic", "mu-dng-converter"]
+src = ["mufusion", "muraw", "muraw-demosaic", "mu-dng-converter", "muraspi"]
 
 [lint]
 # Pyflakes and isort. Layout is the formatter's job.

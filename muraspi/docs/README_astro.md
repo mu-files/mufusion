@@ -1,6 +1,6 @@
 # Astronomy: ZWO ASI Capture
 
-Live capture from ZWO ASI cameras to DNG using [muraw](https://github.com/mu-files/mu-image).
+Live capture from ZWO ASI cameras to DNG using [muraw](../../muraw/README.md).
 
 ## zwo_capture.py — Live ZWO ASI Capture to DNG
 
@@ -72,16 +72,44 @@ The ZWO ASI SDK library must be accessible. The script searches these locations:
 1. `ZWO_ASI_LIB` environment variable
 2. `/Applications/ASIStudio.app/Contents/Frameworks/libASICamera2.dylib` (macOS)
 3. `/usr/local/lib/libASICamera2.so` (Linux)
+4. `/opt/homebrew/lib/libASICamera2.dylib` (macOS)
+5. `~/Library/Application Support/ZWO/ASICamera/libASICamera2.dylib` (macOS)
+
+The library is in ZWO's camera SDK, from the
+[ZWO developer downloads](https://www.zwoastro.com/software/product-sdk/). The
+download is `ASI_Camera_SDK.zip`, which holds `ASI_linux_mac_SDK_V<version>.tar.bz2`
+with a library for each platform under `lib/`.
+
+### Raspberry Pi and other Linux
+
+Tested on a Raspberry Pi 5 with a ZWO ASI676MC and SDK V1.42. Unpack the SDK
+anywhere, for example `~/zwo-sdk`, and point `ZWO_ASI_LIB` at the 64-bit ARM
+library (`lib/x64/` on an x86-64 PC):
+
+```bash
+export ZWO_ASI_LIB=~/zwo-sdk/ASI_linux_mac_SDK_V1.42/lib/armv8/libASICamera2.so
+```
+
+The camera's USB device is readable only by root until ZWO's udev rule is
+installed. The rule also raises the USB buffer limit to the 200 MB that full
+frames need:
+
+```bash
+sudo install ~/zwo-sdk/ASI_linux_mac_SDK_V1.42/lib/asi.rules /etc/udev/rules.d
+```
+
+Then reconnect the camera. `cat /sys/module/usbcore/parameters/usbfs_memory_mb`
+should print `200`.
 
 ## Installation
 
 ```bash
-cd mu-rasppi
+cd mufusion/muraspi
 python3 -m venv venv
 venv/bin/pip install -e ".[zwo]"
 ```
 
-This installs `muraw`, `numpy`, and `zwoasi`.
+This installs `muraw`, `mufusion`, `numpy`, and `zwoasi`.
 
 ## DNG Output
 
@@ -94,11 +122,12 @@ The generated DNGs include:
 - **BlackLevel / WhiteLevel** — From FITS headers or camera offset
 - **BaselineExposure** — Auto-calculated from image histogram
 - **ProfileToneCurve** — Linear (bypasses Adobe Camera Raw default curve)
-- **XMP ToneCurvePV2012** — S-curve contrast
 
 ### macOS Apple Silicon Note
 
-The ZWO ASI SDK is x86_64-only. On Apple Silicon Macs you must create an x86_64 virtual environment that runs under Rosetta:
+SDK V1.42 includes a native Apple Silicon library, `lib/mac_arm64/libASICamera2.dylib`;
+point `ZWO_ASI_LIB` at it. Older SDKs are x86_64-only, and need an x86_64
+virtual environment that runs under Rosetta:
 
 ```bash
 # Create x86_64 venv (requires x86 Python via Homebrew under Rosetta)
@@ -115,5 +144,5 @@ If you don't have an x86_64 Python, install one with:
 arch -x86_64 /usr/local/bin/brew install python@3.13
 ```
 
-> **Note**: `mu-dng-fits` does not require the ZWO SDK and works natively on Apple Silicon.
+> **Note**: `fits2dng`, in [mu-dng-converter](../../mu-dng-converter/README.md), does not require the ZWO SDK and works natively on Apple Silicon.
 

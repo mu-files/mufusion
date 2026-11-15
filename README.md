@@ -13,7 +13,7 @@ seamless.
 Included in the package is also a fully spec compliant DNG RAW decoder and
 encoder that is built completely on mufusion.
 
-The repository contains three packages:
+The repository contains these projects:
 
 - **[`mufusion`](mufusion/README.md)**: The array library, a lazy image
   compute graph with a NumPy interface. Import `mufusion as mu`. Install
@@ -24,6 +24,9 @@ The repository contains three packages:
 - **[`mu-dng-converter`](mu-dng-converter/README.md)**: A desktop GUI on
   `muraw` and [PyWebView](https://pywebview.flowrl.com/) for batch
   convert and transcode.
+- **[`muraspi`](muraspi/README.md)**: Example capture scripts for the
+  Raspberry Pi camera and ZWO ASI cameras, writing DNG with `muraw`, and a
+  DNG writing benchmark against PiDNG.
 
 ---
 
