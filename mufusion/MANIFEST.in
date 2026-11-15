@@ -1,0 +1,4 @@
+include LICENSE
+include README.md
+recursive-include mufusion/_engines/core/_binaries *
+prune tests

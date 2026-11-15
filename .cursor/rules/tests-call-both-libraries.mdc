@@ -1,13 +1,13 @@
 ---
-description: Tests run one function with mi and with np, so both make exactly the same calls
+description: Tests run one function with mu and with np, so both make exactly the same calls
 alwaysApply: true
 ---
 
 # Tests call one function with each library
 
-A test that compares `mi` with NumPy puts the computation in one helper
+A test that compares `mu` with NumPy puts the computation in one helper
 that takes the library as its first argument, `lib`, and calls it once
-with `mi` and once with `np`. Only the library changes between the two
+with `mu` and once with `np`. Only the library changes between the two
 calls, so both paths make exactly the same calls. Two parallel bodies,
 one written for each library, drift apart and test different code.
 
@@ -22,15 +22,15 @@ def _rendered(lib, src):
 
 def test_rendered_matches_numpy():
     x = _image((40, 300, 3))
-    got = _rendered(mi, mi.Array(x))
+    got = _rendered(mu, mu.Array(x))
     np.testing.assert_allclose(got.realize(), _rendered(np, x), rtol=1e-6)
 ```
 
-- The source is wrapped (`mi.Array(x)`, a `channel_axis`) outside the
+- The source is wrapped (`mu.Array(x)`, a `channel_axis`) outside the
   helper, so the helper body is the same for both.
 - Methods and operators (`x.take(...)`, `x[key]`, `*`) need no `lib`; the
   helper still takes it so every check has the same shape.
 - An expected error is checked the same way: the helper inside
   `pytest.raises` of the same exception type, once per library.
-- Checks of `mi` alone (graph nodes, attrs, `NotImplementedError`) do not
+- Checks of `mu` alone (graph nodes, attrs, `NotImplementedError`) do not
   need a NumPy call.

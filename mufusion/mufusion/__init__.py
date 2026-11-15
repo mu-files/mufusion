@@ -2,9 +2,7 @@
 # Copyright (c) 2026 mu-files
 """mufusion — ``import mufusion as mu``.
 
-Ships from the muraw wheel today. When the graph is extracted into a
-standalone package, this becomes that package and the import spelling
-at call sites does not change::
+A lazy image compute graph with a NumPy interface::
 
     import mufusion as mu
 
@@ -13,9 +11,10 @@ at call sites does not change::
     x = mu.rgb_matrix_3x3(x, matrix=M)
     out = x.realize()
 
-Every op in ``engines/catalog/ops.yaml`` is a callable here (via the
+Every op in ``_engines/catalog/ops.yaml`` is a callable here (via the
 generated ``mufusion._engines.ops``). Engines are pluggable backends that
-execute the graph; pipeline code calls ``mu.<op>``, not ``engines.*``.
+execute the graph; pipeline code calls ``mu.<op>``. The modules under
+``mufusion`` are private; this module is the public surface.
 """
 
 from __future__ import annotations
@@ -24,7 +23,14 @@ from __future__ import annotations
 # the array names that follow (pad, tile, take, matmul, …) are wrappers and
 # must win. isort would reverse that (I001 is ignored for this file).
 from mufusion._engines import ops as _catalog
-from mufusion._engines.graph import emit, flush, op
+from mufusion._engines.graph import (
+    EngineTiming,
+    emit,
+    flush,
+    get_engine_timing,
+    op,
+    set_engine_timing,
+)
 from mufusion._engines.ops import *  # noqa: F401,F403 — generated __all__ is the catalog surface
 from mufusion._array import (
     Array,
@@ -120,13 +126,25 @@ from mufusion._array import (
     zeros,
     zeros_like,
 )
+from mufusion._timing import PerfTimer
+
+# The repr and the pickles of a public class name mufusion, not the private
+# module it is defined in, so they stay valid when that module moves.
+Array.__module__ = "mufusion"
+ArrayMeta.__module__ = "mufusion"
+EngineTiming.__module__ = "mufusion"
+PerfTimer.__module__ = "mufusion"
 
 __all__ = [
     "Array",
     "ArrayLike",
     "ArrayMeta",
+    "EngineTiming",
+    "PerfTimer",
     "emit",
     "flush",
+    "get_engine_timing",
+    "set_engine_timing",
     "abs",
     "absolute",
     "acos",

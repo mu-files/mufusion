@@ -1,8 +1,8 @@
 # This file is generated; do not edit it here.
 
 # Regenerate the public Python API:
-#   python -m muraw.engines.tools.gen_ops
-#   (writes muraw/engines/ops.py)
+#   python -m mufusion._engines.tools.gen_ops
+#   (writes mufusion/_engines/ops.py)
 #
 # A comment on an op says what the op computes, as any engine must
 # compute it. How one engine runs it (its loops and SIMD paths, the
@@ -1020,7 +1020,7 @@ ops:
   # Repeat the source. row_reps, col_reps, and channel_reps are the
   # counts after NumPy's right-aligned padding with leading 1s, and
   # frame_reps (1 when omitted) repeats frames. Each must be >= 1. The
-  # public mi.tile parses reps; this op takes the counts.
+  # public mu.tile parses reps; this op takes the counts.
   # row_repeats and col_repeats (1 when omitted) repeat each row and each
   # column in place, as np.repeat, before the copies of row_reps and
   # col_reps: dest column x reads source column

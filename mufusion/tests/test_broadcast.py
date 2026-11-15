@@ -117,8 +117,8 @@ def test_broadcast_to_packs_one_channel(dtype):
 
 
 def test_row_and_column_repeats_run_the_tile_kernel():
-    from mufusion._timing import PerfTimer
     from mufusion._engines.graph import EngineTiming, engine_timing, set_engine_timing
+    from mufusion._timing import PerfTimer
 
     row = np.arange(32, dtype=np.float32)
     column = np.arange(64, dtype=np.float32).reshape(64, 1)

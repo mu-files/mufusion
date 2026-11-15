@@ -134,7 +134,7 @@ class OpMeta:
     """Static catalog facts for an engine op (not dependent on a Array).
 
     ``requires_2d``, ``is_cfa`` and ``is_rgb`` are defined in the header of
-    ``engines/catalog/ops.yaml``.
+    ``_engines/catalog/ops.yaml``.
     """
 
     name: str

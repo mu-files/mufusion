@@ -10,7 +10,7 @@ import pytest
 import tifffile
 from conftest import compute_diff_stats
 
-from mufusion._array import Array
+from mufusion import Array
 from muraw.dngio import DngFile
 from muraw.raw_render import DemosaicAlgorithm, demosaic
 

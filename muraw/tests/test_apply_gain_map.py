@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 import mufusion as mu
-from mufusion._array import Array
+from mufusion import Array
 
 _HEIGHT = 40
 _WIDTH = 53

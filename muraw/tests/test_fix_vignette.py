@@ -13,7 +13,7 @@ the kernels in float32, so the two agree to a few float32 ulps.
 import numpy as np
 import pytest
 
-from mufusion._array import Array
+from mufusion import Array
 from muraw.raw_render import VIGNETTE_MAP_SPACING, _fix_vignette_opcode
 
 _HEIGHT = 40

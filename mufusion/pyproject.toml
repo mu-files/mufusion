@@ -1,0 +1,75 @@
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 mu-files
+
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mufusion"
+# Released with muraw at the same version.
+version = "0.1.20260905.1732"
+description = "A lazy, fused image compute graph with a NumPy interface"
+authors = [{name = "mu-files", email = "info@mu-files.com"}]
+readme = "README.md"
+requires-python = ">=3.12"
+license = "BSD-3-Clause"
+license-files = ["LICENSE"]
+keywords = [
+    "numpy", "image-processing", "compute-graph", "lazy-evaluation",
+    "operator-fusion", "raw-image", "dng",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Multimedia :: Graphics",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+]
+dependencies = [
+    "numpy>=2",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+]
+
+[project.urls]
+Homepage = "https://github.com/mu-files/mu-image"
+Repository = "https://github.com/mu-files/mu-image"
+
+[tool.setuptools]
+packages = [
+    "mufusion",
+    "mufusion._engines",
+    "mufusion._engines.tools",
+    "mufusion._engines.core",
+]
+# The host-only CoreEngine binary and ops.yaml are in setup.py package_data.
+# Do not add [tool.setuptools.package-data] here: that table replaces the
+# setup.py dict, so a "_binaries/*" glob ships every arch (delvewheel
+# rejects the other Windows .pyd) and a yaml-only table ships no binary.
+# MANIFEST.in still ships all _engines/core/_binaries/* in the sdist.
+
+[tool.pytest.ini_options]
+log_cli = true
+log_cli_level = "WARNING"
+log_cli_format = "%(levelname)-8s %(name)s:%(filename)s:%(lineno)d %(message)s"
+addopts = "--tb=no"
+
+# Type checker (basedpyright / pyright / Cursor). Config root is this directory.
+[tool.basedpyright]
+venvPath = "../muraw"
+venv = "venv"
+pythonVersion = "3.12"
+
+[tool.pyright]
+venvPath = "../muraw"
+venv = "venv"
+pythonVersion = "3.12"

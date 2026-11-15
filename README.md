@@ -13,11 +13,14 @@ seamless.
 Included in the package is also a fully spec compliant DNG RAW decoder and
 encoder that is built completely on mu-image.
 
-The repository contains two packages:
+The repository contains three packages:
 
+- **[`mufusion`](mufusion/README.md)**: The array library, a lazy image
+  compute graph with a NumPy interface. Import `mufusion as mu`. Install
+  with `pip install mufusion`; its only dependency is NumPy.
 - **[`muraw`](muraw/README.md)**: A Python library and CLI for DNG I/O,
-  rendering, metadata, and multi-threaded batch processing. Import
-  `muraw`. Install with `pip install muraw`.
+  rendering, metadata, and multi-threaded batch processing, built on
+  `mufusion`. Import `muraw`. Install with `pip install muraw`.
 - **[`mu-dng-converter`](mu-dng-converter/README.md)**: A desktop GUI on
   `muraw` and [PyWebView](https://pywebview.flowrl.com/) for batch
   convert and transcode.

@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import mufusion as mu
-from mufusion._array import Array, fliplr, flipud, rot90
+from mufusion import Array, fliplr, flipud, rot90
 from mufusion._engines.ops import OPS_BY_NAME
 from muraw.raw_render import _demosaic_vng_rcd_opencv
 

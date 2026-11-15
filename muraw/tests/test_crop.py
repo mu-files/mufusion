@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 import mufusion as mu
-from mufusion._array import Array
+from mufusion import Array
 from muraw.raw_render import DemosaicAlgorithm, demosaic
 from muraw.tiff_metadata import Orientation
 

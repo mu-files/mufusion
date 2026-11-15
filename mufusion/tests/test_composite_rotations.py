@@ -12,8 +12,8 @@ from __future__ import annotations
 import numpy as np
 
 import mufusion as mu
-from mufusion._timing import PerfTimer
 from mufusion._engines.graph import EngineTiming, set_engine_timing
+from mufusion._timing import PerfTimer
 
 _SIDE = 420
 # (block row, block column, rot90 turns). Turns go counterclockwise.

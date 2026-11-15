@@ -20,7 +20,7 @@ from conftest import (
 )
 
 import mufusion as mu
-from mufusion._array import Array
+from mufusion import Array
 from muraw.dngio import DngFile
 from muraw.imgio import (
     convert_dng_to_stream,

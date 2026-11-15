@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 import mufusion as mu
-from mufusion._array import Array, fliplr, flipud
+from mufusion import Array, fliplr, flipud
 from muraw.raw_render import _fix_vignette_opcode
 
 _MATRIX = np.eye(3, dtype=np.float32)[[1, 2, 0]]

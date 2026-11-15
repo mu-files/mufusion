@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 import mufusion as mu
-from mufusion._array import Array
+from mufusion import Array
 
 _GREEN_OFFSETS = ((-1, -1), (-1, 1), (1, -1), (1, 1))
 _RED_BLUE_OFFSETS = ((-2, 0), (2, 0), (0, -2), (0, 2))

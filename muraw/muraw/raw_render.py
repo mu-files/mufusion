@@ -12,9 +12,9 @@ from numpy.typing import DTypeLike
 
 # Package imports
 import mufusion as mu
+from mufusion import Array, ArrayLike, PerfTimer
 
-from mufusion._array import Array, ArrayLike, supported_dtype
-from .common import PerfTimer, enum_display_name
+from .common import enum_display_name
 from .deps import cv2_proxy as cv2
 from .splines import LUT, ColorSpace, ColorSpaceLUT, CubicSpline
 from .tiff_metadata import (
@@ -107,7 +107,7 @@ def mono_lut(
         Lazy ``Array`` (H, W, 1) with dst_dtype
     """
     t = image
-    dest = supported_dtype(dst_dtype)
+    dest = np.dtype(dst_dtype)
     if t.meta.channels != 1:
         raise ValueError(
             f"Monochrome image must have 1 channel, got channels={t.meta.channels}"
@@ -214,7 +214,7 @@ def convert_colorspace(
     call ``.realize()`` on the returned ``Array`` to materialize.
     """
     t = image
-    dest = supported_dtype(dst_dtype)
+    dest = np.dtype(dst_dtype)
 
     if source_space == dest_space:
         return t.convert_type(dest)
@@ -269,7 +269,7 @@ def rgb_transform(
     Does not run pixels; call ``.realize()`` on the returned ``Array`` to materialize.
     """
     t = image
-    dest = supported_dtype(dst_dtype)
+    dest = np.dtype(dst_dtype)
     if t.meta.channels != 3:
         raise ValueError(f"Image must be (H, W, 3), got channels={t.meta.channels}")
     if t.meta.dtype not in ("uint8", "uint16", "float32"):
@@ -536,7 +536,7 @@ def demosaic(
             f"Supported algorithms are: {list(DemosaicAlgorithm)}."
         )
 
-    out_dtype = supported_dtype(dst_dtype) if dst_dtype is not None else t.meta.dtype
+    out_dtype = np.dtype(dst_dtype) if dst_dtype is not None else t.meta.dtype
 
     if algorithm in (
         DemosaicAlgorithm.BILINEAR,
@@ -569,7 +569,7 @@ def demosaic(
 # DNG SDK Port (Python + C++ Extension)
 # =============================================================================
 # Everything below is a port of the Adobe DNG SDK 1.7.1 color pipeline.
-# Engine kernels via mufusion / mufusion._engines.core._engine_load.
+# The pixel work runs as mufusion ops.
 #
 # Key SDK source files referenced:
 #   - dng_color_spec.cpp: SetWhiteXY(), NeutralToXY(), FindXYZtoCamera()

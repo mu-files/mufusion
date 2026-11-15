@@ -20,8 +20,8 @@ import numpy as np
 import pytest
 
 import mufusion as mu
-from mufusion._timing import PerfTimer
 from mufusion._engines.graph import EngineTiming, engine_timing, set_engine_timing
+from mufusion._timing import PerfTimer
 
 
 def _image(shape, dtype=np.float32):

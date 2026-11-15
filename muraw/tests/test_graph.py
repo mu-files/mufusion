@@ -494,7 +494,7 @@ def test_cfa_demosaic_rejects_unknown_algorithm():
     ],
 )
 def test_cfa_demosaic_timing_row_names_the_algorithm(algorithm, row_name):
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
     from mufusion._engines.graph import EngineTiming, engine_timing, set_engine_timing
 
     cfa = np.array([[0.2, 0.4], [0.6, 0.8]], dtype=np.float32)
@@ -672,7 +672,7 @@ def test_core_binaries_path():
 
 
 def test_add_completed_step_duration():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
 
     root = PerfTimer("root")
     child = root.add_completed_step("native_op (engine)", 0.025)
@@ -683,7 +683,7 @@ def test_add_completed_step_duration():
 
 
 def test_add_completed_steps_sequential_no_overlap():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
 
     root = PerfTimer("root")
     children = root.add_completed_steps(
@@ -728,7 +728,7 @@ def test_engine_timing_setting():
 
 
 def test_perftimer_context_manager_nests():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
 
     with PerfTimer("root") as root:
         assert PerfTimer.current() is root
@@ -747,7 +747,7 @@ def test_perftimer_context_manager_nests():
 
 
 def test_perftimer_step_is_fire_and_forget():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
 
     root = PerfTimer("root")
     a = PerfTimer.step("a")
@@ -763,7 +763,7 @@ def test_perftimer_step_is_fire_and_forget():
 
 
 def test_perftimer_step_nests_under_current_not_root():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
 
     root = PerfTimer("root")
     bucket = root.start_step("bucket")
@@ -778,7 +778,7 @@ def test_perftimer_step_nests_under_current_not_root():
 
 
 def test_perftimer_broken_stack_report():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
 
     root = PerfTimer("root")
     child = root.start_step("a")
@@ -799,7 +799,7 @@ def test_perftimer_missed_close_then_continue_at_parent():
     skips ``L2.close()``. Outer then ``L0.start_step("L1b")`` — L0 auto-closes the
     abandoned L1 subtree (including L2) and opens L1b as the next child of L0.
     """
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
 
     try:
         root = PerfTimer("root")
@@ -841,7 +841,7 @@ def test_perftimer_missed_close_then_continue_at_parent():
 
 
 def test_compute_times_engine_ops():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
     from mufusion._engines.graph import EngineTiming, engine_timing, set_engine_timing
 
     prev = engine_timing
@@ -863,7 +863,7 @@ def test_compute_times_engine_ops():
 
 
 def test_core_engine_segments_no_op_children():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
     from mufusion._engines.graph import EngineTiming, engine_timing, set_engine_timing
 
     prev = engine_timing
@@ -880,7 +880,7 @@ def test_core_engine_segments_no_op_children():
 
 
 def test_core_engine_off_no_rows_even_with_open_timer():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
     from mufusion._engines.graph import EngineTiming, engine_timing, set_engine_timing
 
     prev = engine_timing
@@ -895,7 +895,7 @@ def test_core_engine_off_no_rows_even_with_open_timer():
 
 
 def test_compute_nests_under_current_stack_top():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
     from mufusion._engines.graph import EngineTiming, engine_timing, set_engine_timing
 
     prev = engine_timing
@@ -912,7 +912,7 @@ def test_compute_nests_under_current_stack_top():
 
 
 def test_compute_ops_under_graph_compute():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
     from mufusion._engines.graph import EngineTiming, engine_timing, set_engine_timing
 
     prev = engine_timing
