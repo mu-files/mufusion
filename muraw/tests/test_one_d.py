@@ -5,9 +5,9 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import muimage as mi
-from muraw.array import Array, fliplr, flipud, rot90
-from muraw.engines.ops import OPS_BY_NAME
+import mufusion as mu
+from mufusion import Array, fliplr, flipud, rot90
+from mufusion._engines.ops import OPS_BY_NAME
 from muraw.raw_render import _demosaic_vng_rcd_opencv
 
 V = np.arange(8, dtype=np.float32)
@@ -44,7 +44,7 @@ def test_elementwise_ops_keep_1d():
 
 
 def test_lut_keeps_1d():
-    out = mi.lut(Array(V / 8), lut=np.linspace(0.0, 1.0, 16, dtype=np.float32))
+    out = mu.lut(Array(V / 8), lut=np.linspace(0.0, 1.0, 16, dtype=np.float32))
     assert out.shape == (8,)
     assert out.realize().shape == (8,)
 
@@ -52,18 +52,18 @@ def test_lut_keeps_1d():
 @pytest.mark.parametrize("shape", [(5,), 5], ids=["tuple", "int"])
 def test_constructors_accept_1d(shape):
     np.testing.assert_array_equal(
-        mi.zeros(shape).realize(), np.zeros(shape, np.float32)
+        mu.zeros(shape).realize(), np.zeros(shape, np.float32)
     )
-    np.testing.assert_array_equal(mi.ones(shape).realize(), np.ones(shape, np.float32))
+    np.testing.assert_array_equal(mu.ones(shape).realize(), np.ones(shape, np.float32))
     np.testing.assert_array_equal(
-        mi.full(shape, 3, dtype="uint8").realize(), np.full(shape, 3, np.uint8)
+        mu.full(shape, 3, dtype="uint8").realize(), np.full(shape, 3, np.uint8)
     )
 
 
 def test_like_constructors_accept_1d():
-    assert mi.zeros_like(Array(V)).shape == (8,)
-    assert mi.ones_like(Array(V)).realize().shape == (8,)
-    assert mi.full_like(Array(V), 2.0).realize().shape == (8,)
+    assert mu.zeros_like(Array(V)).shape == (8,)
+    assert mu.ones_like(Array(V)).realize().shape == (8,)
+    assert mu.full_like(Array(V), 2.0).realize().shape == (8,)
 
 
 @pytest.mark.parametrize(
@@ -129,7 +129,7 @@ def test_transpose_is_unchanged():
     ids=["int", "pair", "one_pair", "edge"],
 )
 def test_pad_matches_numpy(pad_width, kwargs):
-    out = mi.pad(Array(V), pad_width, **kwargs)
+    out = mu.pad(Array(V), pad_width, **kwargs)
     expected = np.pad(V, pad_width, **kwargs)
     assert out.shape == expected.shape
     np.testing.assert_array_equal(out.realize(), expected)
@@ -137,14 +137,14 @@ def test_pad_matches_numpy(pad_width, kwargs):
 
 @pytest.mark.parametrize("reps", [2, (4, 1), (1, 2), (3, 2)])
 def test_tile_matches_numpy(reps):
-    out = mi.tile(Array(V), reps)
+    out = mu.tile(Array(V), reps)
     expected = np.tile(V, reps)
     assert out.shape == expected.shape
     np.testing.assert_array_equal(out.realize(), expected)
 
 
 def test_tile_three_reps_makes_channels():
-    out = mi.tile(Array(V), (1, 1, 2))
+    out = mu.tile(Array(V), (1, 1, 2))
     expected = np.tile(V, (1, 1, 2))
     assert out.shape == expected.shape
     np.testing.assert_array_equal(out.realize(), expected)
@@ -173,4 +173,4 @@ def test_demosaic_vng_rcd_opencv_rejects_1d():
 
 def test_rgb_ops_reject_1d_by_channel_count():
     with pytest.raises(ValueError, match="expected 3 channel"):
-        mi.rgb_matrix_3x3(Array(V), matrix=np.eye(3, dtype=np.float32))
+        mu.rgb_matrix_3x3(Array(V), matrix=np.eye(3, dtype=np.float32))

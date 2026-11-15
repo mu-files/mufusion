@@ -1,0 +1,191 @@
+"""The requires_2d / is_cfa / is_rgb op properties and the rgb_ / cfa_ naming rule."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+import mufusion as mu
+from mufusion._array import Array
+from mufusion._engines.ops import OPS_BY_NAME
+from mufusion._engines.tools.gen_ops import validate_ops
+
+
+def _catalog_op(name, channels, **props):
+    return {
+        "name": name,
+        "inputs": [{"channels": channels}],
+        "outputs": [{"channels": "same"}],
+        **props,
+    }
+
+
+@pytest.mark.parametrize(
+    ("op", "message"),
+    [
+        (_catalog_op("cfa_thing", 1, requires_2d=True), "named cfa_"),
+        (_catalog_op("thing", 1, is_cfa=True, requires_2d=True), "named cfa_"),
+        (_catalog_op("rgb_thing", 3), "named rgb_"),
+        (_catalog_op("thing", 3, is_rgb=True), "named rgb_"),
+        (_catalog_op("cfa_thing", 1, is_cfa=True), "requires requires_2d"),
+        (_catalog_op("cfa_thing", "any", is_cfa=True, requires_2d=True), "channels: 1"),
+        (_catalog_op("rgb_thing", 1, is_rgb=True), "channels: 3"),
+        (
+            _catalog_op("rgb_thing", 3, is_rgb=True, is_cfa=True, requires_2d=True),
+            "both true",
+        ),
+    ],
+)
+def test_gen_ops_rejects_property_violations(op, message):
+    with pytest.raises(ValueError, match=message):
+        validate_ops([op])
+
+
+def test_gen_ops_accepts_consistent_properties():
+    validate_ops(
+        [
+            _catalog_op("cfa_thing", 1, is_cfa=True, requires_2d=True),
+            _catalog_op("rgb_thing", 3, is_rgb=True),
+            _catalog_op("warp_thing", "any", requires_2d=True),
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "requires_2d", "is_cfa", "is_rgb"),
+    [
+        ("cfa_demosaic", True, True, False),
+        ("cfa_normalize_raw", True, True, False),
+        ("rgb_normalize_raw", True, False, True),
+        ("rgb_transform", False, False, True),
+        ("warp_rectilinear", True, False, False),
+        ("apply_gain_map", True, False, False),
+        ("lut", False, False, False),
+    ],
+)
+def test_catalog_op_meta_reports_properties(name, requires_2d, is_cfa, is_rgb):
+    meta = OPS_BY_NAME[name].meta
+    assert (meta.requires_2d, meta.is_cfa, meta.is_rgb) == (requires_2d, is_cfa, is_rgb)
+
+
+def test_every_catalog_op_follows_the_naming_rule():
+    for name, op in OPS_BY_NAME.items():
+        meta = op.meta
+        assert meta.is_cfa == name.startswith("cfa_"), name
+        assert meta.is_rgb == name.startswith("rgb_"), name
+        assert not meta.is_cfa or meta.requires_2d, name
+
+
+def _normalize_attrs(channels):
+    return dict(
+        black_level=np.full(channels, 100.0, dtype=np.float32),
+        black_repeat_rows=1,
+        black_repeat_cols=1,
+        white_level=np.full(channels, 1100.0, dtype=np.float32),
+    )
+
+
+@pytest.mark.parametrize(
+    ("op_name", "src"),
+    [
+        (
+            "rgb_normalize_raw",
+            np.array([[[100, 600, 1100], [350, 850, 1600]]], dtype=np.uint16),
+        ),
+        ("cfa_normalize_raw", np.array([[100, 600], [1100, 1600]], dtype=np.uint16)),
+    ],
+    ids=["rgb", "mono"],
+)
+def test_normalize_raw_matches_numpy(op_name, src):
+    channels = src.shape[2] if src.ndim == 3 else 1
+    normalize_raw = getattr(mu, op_name)
+    out = normalize_raw(Array(src), **_normalize_attrs(channels)).realize()
+    expected = np.clip((src.astype(np.float32) - 100.0) / 1000.0, 0.0, 1.0)
+    np.testing.assert_allclose(np.asarray(out).reshape(src.shape), expected, atol=1e-6)
+
+
+def test_cfa_normalize_raw_rejects_three_channels():
+    with pytest.raises(ValueError, match="expected 1 channel"):
+        mu.cfa_normalize_raw(
+            Array(np.zeros((2, 2, 3), dtype=np.uint16)), **_normalize_attrs(1)
+        )
+
+
+def test_rgb_normalize_raw_rejects_one_channel():
+    with pytest.raises(ValueError, match="expected 3 channel"):
+        mu.rgb_normalize_raw(
+            Array(np.zeros((2, 2), dtype=np.uint16)), **_normalize_attrs(3)
+        )
+
+
+# The ops that set their output's placement themselves. Each one moves,
+# resizes or reorders the rows and columns, or, for the broadcast ops,
+# picks one of several inputs. Every other op keeps its input's.
+_OPS_WITH_OWN_PLACEMENT = {
+    "add",
+    "subtract",
+    "multiply",
+    "divide",
+    "floor_divide",
+    "minimum",
+    "maximum",
+    "hypot",
+    "power",
+    "arctan2",
+    "convert_colormodel",
+    "logical_and",
+    "logical_or",
+    "logical_xor",
+    "bitwise_and",
+    "bitwise_or",
+    "bitwise_xor",
+    "left_shift",
+    "right_shift",
+    "view",
+    "pad",
+    "tile",
+    "take",
+    "resize",
+    "orientation",
+    "transpose",
+    "reshape",
+}
+
+
+def test_only_the_listed_ops_set_their_own_placement():
+    """An op added with its own output meta has to be added to the list,
+    after checking that it means to change the placement."""
+    own = {name for name, op in OPS_BY_NAME.items() if op._infer_meta is not None}
+    assert own == _OPS_WITH_OWN_PLACEMENT
+
+
+def _offset_inputs(channels):
+    """An odd-offset slice and an odd-offset view of a larger image, with
+    ``channels`` channels."""
+    shape = (40, 60) if channels == 1 else (40, 60, channels)
+    x = Array(np.zeros(shape, np.float32))
+    return {
+        "slice": x[5:31, 7:51],
+        "view": x.view(np.s_[5:31, 7:51], mode="crop_oob_valid"),
+    }
+
+
+@pytest.mark.parametrize(
+    "name",
+    sorted(
+        name
+        for name, op in OPS_BY_NAME.items()
+        if op._infer_meta is None and op._n_inputs >= 1
+    ),
+)
+def test_an_op_without_its_own_placement_keeps_its_inputs(name):
+    """The output of an op that does not move the rows and columns has its
+    input's origin, canvas and ``oob_valid``, so a later op that reads
+    pixel positions measures them as on the input."""
+    op = OPS_BY_NAME[name]
+    channels = op._in_channels[0] or 3
+    attrs = {"dest_dtype": "float32", "columns": 3}
+    for kind, x in _offset_inputs(channels).items():
+        out = op.infer_out_meta(x, attrs)
+        placement = (out.origin, out.canvas, out.oob_valid)
+        assert placement == (x.meta.origin, x.meta.canvas, x.meta.oob_valid), kind

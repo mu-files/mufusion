@@ -1,8 +1,8 @@
 """DNG FixVignetteRadial, as the renderer builds it from
-``mi.radial_polynomial`` and ``mi.apply_gain_map``, against a NumPy port
+``mu.radial_polynomial`` and ``mu.apply_gain_map``, against a NumPy port
 of the radial gain.
 
-NumPy has no such function, so each case compares ``mi`` with
+NumPy has no such function, so each case compares ``mu`` with
 ``_reference``, at every spacing in ``_MAP_SPACINGS``. With
 ``map_spacing`` 1 the gain is the formula at each pixel; above 1 it is
 the formula at every ``map_spacing``-th canvas column and row,
@@ -13,7 +13,7 @@ the kernels in float32, so the two agree to a few float32 ulps.
 import numpy as np
 import pytest
 
-from muraw.array import Array
+from mufusion import Array
 from muraw.raw_render import VIGNETTE_MAP_SPACING, _fix_vignette_opcode
 
 _HEIGHT = 40
@@ -165,7 +165,7 @@ CASES = {
 
 
 def run_case(name, map_spacing):
-    """The case's ``mi`` result, realized."""
+    """The case's ``mu`` result, realized."""
     src, attrs, before, after = CASES[name]
     x = Array(src)
     if before is not None:

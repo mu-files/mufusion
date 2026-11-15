@@ -1,7 +1,7 @@
 """``apply_gain_map`` (DNG GainMap) against a NumPy port of the gain map
 formula.
 
-NumPy has no such function, so each case compares ``mi`` with
+NumPy has no such function, so each case compares ``mu`` with
 ``_reference``. The reference interpolates the map in double precision
 and the kernel in float32, so the two agree to a few float32 ulps.
 """
@@ -9,8 +9,8 @@ and the kernel in float32, so the two agree to a few float32 ulps.
 import numpy as np
 import pytest
 
-import muimage as mi
-from muraw.array import Array
+import mufusion as mu
+from mufusion import Array
 
 _HEIGHT = 40
 _WIDTH = 53
@@ -129,10 +129,10 @@ def _attrs(
 
 
 def _apply(x, gains, attrs):
-    """``mi.apply_gain_map`` with a table that is an ndarray or already an
-    ``mi.Array``."""
+    """``mu.apply_gain_map`` with a table that is an ndarray or already an
+    ``mu.Array``."""
     table = gains if isinstance(gains, Array) else Array(gains)
-    return mi.apply_gain_map(x, table, **attrs)
+    return mu.apply_gain_map(x, table, **attrs)
 
 
 def _one_op(src, gains, before=None, after=None, **attrs):
@@ -279,7 +279,7 @@ CASES = {
 
 
 def run_case(name, dtype=np.float32, engine_opts=None):
-    """The case's ``mi`` result, realized, on its source as ``dtype``."""
+    """The case's ``mu`` result, realized, on its source as ``dtype``."""
     src, ops, before, after = CASES[name]
     x = Array(_as_dtype(src, dtype))
     if before is not None:
@@ -377,7 +377,7 @@ def test_apply_gain_map_on_chw_matches_hwc(map_planes, plane_attrs):
     gains = _gains(5, 6, map_planes)
     attrs = _attrs(area=(3, 5, 37, 51), row_pitch=2, **plane_attrs)
     chw = Array(np.ascontiguousarray(np.moveaxis(_RGB, -1, 0)), channel_axis=0)
-    got = mi.moveaxis(_apply(chw, gains, attrs), 0, -1).realize()
+    got = mu.moveaxis(_apply(chw, gains, attrs), 0, -1).realize()
     _assert_close(got, _reference(_RGB, gains, **attrs))
 
 

@@ -1,0 +1,421 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: BSD-3-Clause
+# Copyright (c) 2026 mu-files
+"""Generate mufusion._engines.ops from the portable ops.yaml catalog.
+
+Reads:
+  mufusion/_engines/catalog/ops.yaml
+
+Writes:
+  mufusion/_engines/ops.py
+
+Run from anywhere (stdlib only, no PyYAML):
+  python -m mufusion._engines.tools.gen_ops
+
+The output goes through ``ruff format`` before it is written, so CI's
+``ruff format --check`` passes on it: the ruff named by ``$RUFF``, else
+the one on ``PATH``. Without one the file is written unformatted, with a
+warning. Use the ruff version CI pins, since another version may format
+differently.
+
+Catalog YAML is a constrained subset: top-level maps, list-of-maps,
+scalar string/int values, ``#`` comments.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+ENGINES_DIR = Path(__file__).resolve().parents[1]
+YAML_PATH = ENGINES_DIR / "catalog" / "ops.yaml"
+OPS_OUT = ENGINES_DIR / "ops.py"
+
+# Defined in the header of catalog/ops.yaml. The engine's
+# tools/gen_op_catalog.py applies the same rules in validate_op_properties.
+OP_PROPERTIES = ("requires_2d", "is_cfa", "is_rgb")
+
+
+def _parse_scalar(raw: str):
+    raw = raw.strip()
+    if not raw:
+        return ""
+    if (raw[0] == raw[-1]) and raw[0] in "\"'":
+        return raw[1:-1]
+    if raw == "true":
+        return True
+    if raw == "false":
+        return False
+    if raw == "[]":
+        return []
+    if re.fullmatch(r"-?\d+", raw):
+        return int(raw)
+    return raw
+
+
+def load_ops_yaml(path: Path) -> dict[str, Any]:
+    """Indentation-based loader for the catalog YAML subset."""
+    lines = []
+    for lineno, raw in enumerate(path.read_text().splitlines(), 1):
+        if not raw.strip() or raw.lstrip().startswith("#"):
+            continue
+        indent = len(raw) - len(raw.lstrip(" "))
+        content = raw.strip()
+        if "#" in content and '"' not in content and "'" not in content:
+            content = content.split("#", 1)[0].rstrip()
+        lines.append((lineno, indent, content))
+
+    def parse_block(start: int, min_indent: int):
+        if start >= len(lines):
+            return None, start
+        _, ind0, c0 = lines[start]
+        if ind0 <= min_indent:
+            return None, start
+        if c0.startswith("- "):
+            return parse_seq(start, ind0)
+        return parse_map(start, ind0)
+
+    def parse_map(start: int, map_indent: int):
+        result = {}
+        i = start
+        while i < len(lines):
+            lineno, ind, content = lines[i]
+            if ind < map_indent:
+                break
+            if ind > map_indent:
+                raise ValueError(f"line {lineno}: unexpected indent in map")
+            if content.startswith("- "):
+                break
+            if ":" not in content:
+                raise ValueError(f"line {lineno}: expected key: {content!r}")
+            k, _, v = content.partition(":")
+            k = k.strip()
+            v = v.strip()
+            i += 1
+            if v == "":
+                child, i = parse_block(i, map_indent)
+                result[k] = child if child is not None else None
+            else:
+                result[k] = _parse_scalar(v)
+        return result, i
+
+    def parse_seq(start: int, seq_indent: int):
+        result = []
+        i = start
+        while i < len(lines):
+            lineno, ind, content = lines[i]
+            if ind < seq_indent:
+                break
+            if ind > seq_indent:
+                raise ValueError(f"line {lineno}: unexpected indent in seq")
+            if not content.startswith("- "):
+                break
+            rest = content[2:].strip()
+            i += 1
+            if ":" not in rest:
+                # Plain scalar list item (e.g. an attr `values` entry).
+                result.append(_parse_scalar(rest))
+                continue
+            k, _, v = rest.partition(":")
+            k = k.strip()
+            v = v.strip()
+            if v:
+                item = {k: _parse_scalar(v)}
+            else:
+                # The key sits two columns right of the "- ", so its block is
+                # indented further than that.
+                child, i = parse_block(i, seq_indent + 2)
+                item = {k: child}
+            while i < len(lines):
+                ln, ind2, c2 = lines[i]
+                if ind2 <= seq_indent:
+                    break
+                if c2.startswith("- "):
+                    break
+                if ":" not in c2:
+                    raise ValueError(f"line {ln}: expected key in list item")
+                ck, _, cv = c2.partition(":")
+                ck = ck.strip()
+                cv = cv.strip()
+                i += 1
+                if cv == "":
+                    child, i = parse_block(i, ind2)
+                    item[ck] = child
+                else:
+                    item[ck] = _parse_scalar(cv)
+            result.append(item)
+        return result, i
+
+    doc, end = parse_map(0, 0)
+    if end != len(lines):
+        raise ValueError(f"unconsumed YAML starting line {lines[end][0]}")
+    if "ops" not in doc or not isinstance(doc["ops"], list):
+        raise ValueError("ops.yaml must contain an ops: list")
+    return doc
+
+
+def _out_dtype_expr(out_spec: dict[str, Any]) -> str:
+    dtype_spec = out_spec.get("dtype", "same")
+    if dtype_spec is None or dtype_spec == "same":
+        return "graph._out_dtype_same"
+    if dtype_spec == "float_of_input":
+        return "graph._out_dtype_float_of_input"
+    if dtype_spec == "float_holding_input":
+        return "graph._out_dtype_float_holding_input"
+    if isinstance(dtype_spec, dict):
+        attr_key = dtype_spec.get("from_attr")
+        if not attr_key:
+            raise ValueError(f"invalid dtype spec: {dtype_spec!r}")
+        return f"graph._out_dtype_from_attr({attr_key!r})"
+    if isinstance(dtype_spec, str):
+        return f"graph._out_dtype_const({dtype_spec!r})"
+    raise ValueError(f"invalid dtype spec: {dtype_spec!r}")
+
+
+def _out_channels_expr(out_spec: dict[str, Any]) -> str:
+    ch = out_spec.get("channels", "same")
+    if ch == "same":
+        return "graph._out_channels_same"
+    if isinstance(ch, dict):
+        attr_key = ch.get("from_attr")
+        if not attr_key:
+            raise ValueError(f"invalid channels spec: {ch!r}")
+        return f"graph._out_channels_from_attr({attr_key!r})"
+    return f"graph._out_channels_const({int(ch)})"
+
+
+def _infer_meta_expr(out_spec: dict[str, Any]) -> str:
+    """`geometry: foo` → `graph._out_meta_foo` (policy lives in graph.py)."""
+    geom = out_spec.get("geometry")
+    if geom is None:
+        return "None"
+    if not isinstance(geom, str) or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", geom):
+        raise ValueError(f"outputs.geometry must be a Python identifier, got {geom!r}")
+    return f"graph._out_meta_{geom}"
+
+
+def _in_channels_expr(inputs: list[dict[str, Any]]) -> str:
+    """One channel count per input entry; ``None`` is ``channels: any``."""
+    counts = []
+    for entry in inputs:
+        ch = entry.get("channels", "any")
+        counts.append("None" if ch == "any" else str(int(ch)))
+    trailing_comma = "," if len(counts) == 1 else ""
+    return "(" + ", ".join(counts) + trailing_comma + ")"
+
+
+def _has_variable_input(inputs: list[dict[str, Any]]) -> bool:
+    return bool(inputs) and inputs[-1].get("variable", False) is True
+
+
+def resolve_attr_enums(doc: dict[str, Any]) -> None:
+    """Inline `enum: <name>` attr references from the top-level `enums:` map.
+
+    The emitted attr spec carries the concrete `values` list so runtime
+    validation (graph._coerce_attr) needs no catalog lookup.
+    """
+    enums = doc.get("enums") or {}
+    for name, vals in enums.items():
+        if not isinstance(vals, list) or not all(isinstance(v, str) for v in vals):
+            raise ValueError(f"enums.{name}: must be a list of strings")
+    for op in doc["ops"]:
+        for a in op.get("attrs") or []:
+            ref = a.pop("enum", None)
+            if ref is None:
+                continue
+            if a.get("type") != "string":
+                raise ValueError(
+                    f"op {op['name']!r} attr {a.get('key')!r}: "
+                    "enum requires type: string"
+                )
+            if "values" in a:
+                raise ValueError(
+                    f"op {op['name']!r} attr {a.get('key')!r}: "
+                    "enum and values are mutually exclusive"
+                )
+            if ref not in enums:
+                raise ValueError(
+                    f"op {op['name']!r} attr {a.get('key')!r}: "
+                    f"unknown enum {ref!r} (defined: {sorted(enums)})"
+                )
+            a["values"] = list(enums[ref])
+
+
+def gen_ops_py(doc: dict[str, Any]) -> str:
+    ops = doc["ops"]
+    lines = [
+        "# Generated by mufusion._engines.tools.gen_ops — do not edit.",
+        "# EngineOp callables + OPS_BY_NAME from _engines/catalog/ops.yaml.",
+        "from __future__ import annotations",
+        "",
+        "import json",
+        "",
+        "from . import graph",
+        "from .graph import EngineOp, OpMeta",
+        "",
+    ]
+
+    names: list[str] = []
+    for op in ops:
+        name = op["name"]
+        names.append(name)
+        attrs = op.get("attrs") or []
+        inputs = op.get("inputs")
+        if inputs is None:
+            inputs = [{"channels": "any"}]
+        outputs = op.get("outputs") or [{"channels": "same"}]
+        if len(outputs) != 1:
+            raise ValueError(f"op {name!r}: only single-output ops are supported")
+        out_spec = outputs[0]
+        attrs_json = json.dumps(attrs, indent=2, sort_keys=True)
+        props = ", ".join(f"{key}={bool(op.get(key, False))}" for key in OP_PROPERTIES)
+        lines.append(f"{name} = EngineOp(")
+        lines.append(f"    meta=OpMeta(name={name!r}, {props}),")
+        lines.append(f"    _out_dtype={_out_dtype_expr(out_spec)},")
+        lines.append(f"    _out_channels={_out_channels_expr(out_spec)},")
+        lines.append(f"    _in_channels={_in_channels_expr(inputs)},")
+        lines.append(f"    _n_inputs={len(inputs)},")
+        lines.append(f"    _variable_input={_has_variable_input(inputs)},")
+        lines.append(f"    _attr_specs=tuple(json.loads(r'''{attrs_json}''')),")
+        lines.append(f"    _infer_meta={_infer_meta_expr(out_spec)},")
+        lines.append(")")
+        lines.append("")
+
+    lines.append("OPS_BY_NAME = {")
+    for name in names:
+        lines.append(f"    {name!r}: {name},")
+    lines.append("}")
+    lines.append("")
+    # __all__ lets mufusion star-import exactly the catalog surface.
+    lines.append("__all__ = [")
+    lines.append("    'OPS_BY_NAME',")
+    for name in sorted(names):
+        lines.append(f"    {name!r},")
+    lines.append("]")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def validate_ops(ops: list[dict[str, Any]]) -> None:
+    if not ops:
+        raise ValueError("No ops in catalog")
+    for op in ops:
+        if "name" not in op:
+            raise ValueError(f"op missing name: {op}")
+        if "affinity" in op:
+            raise ValueError(
+                f"op {op['name']!r}: affinity is not allowed "
+                "(catalog is portable interface only)"
+            )
+        if "inputs" not in op or not op.get("outputs"):
+            raise ValueError(f"op {op['name']!r}: inputs and outputs are required")
+        if not isinstance(op["inputs"], list):
+            raise ValueError(f"op {op['name']!r}: inputs must be a list")
+        if len(op["outputs"]) != 1:
+            raise ValueError(f"op {op['name']!r}: only single-output ops are supported")
+        geom = (op["outputs"][0] or {}).get("geometry")
+        if geom is not None:
+            _infer_meta_expr({"geometry": geom})
+        _validate_input_entries(op)
+        _validate_op_properties(op)
+
+
+def _validate_input_entries(op: dict[str, Any]) -> None:
+    """Each ``inputs:`` entry has ``channels`` an int or ``any``, and only the
+    last entry may say ``variable: true``. The engine's tools/gen_op_catalog.py
+    applies the same rules in validate_input_entries."""
+    name = op["name"]
+    entries = op["inputs"]
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise ValueError(f"op {name!r}: inputs[{index}] must be a map")
+        channels = entry.get("channels", "any")
+        if channels != "any" and not isinstance(channels, int):
+            raise ValueError(
+                f"op {name!r}: inputs[{index}].channels must be an int or any"
+            )
+        variable = entry.get("variable", False)
+        if not isinstance(variable, bool):
+            raise ValueError(
+                f"op {name!r}: inputs[{index}].variable must be true or false"
+            )
+        if variable and index != len(entries) - 1:
+            raise ValueError(f"op {name!r}: only the last input entry may be variable")
+
+
+def _validate_op_properties(op: dict[str, Any]) -> None:
+    """Raise ``ValueError`` when the op properties disagree with the name or channels."""
+    name = op["name"]
+    for key in OP_PROPERTIES:
+        if not isinstance(op.get(key, False), bool):
+            raise ValueError(f"op {name!r}: {key} must be true or false")
+    requires_2d = op.get("requires_2d", False)
+    is_cfa = op.get("is_cfa", False)
+    is_rgb = op.get("is_rgb", False)
+    inputs = op["inputs"]
+    in_channels = inputs[0].get("channels", "any") if inputs else "any"
+    if is_cfa and is_rgb:
+        raise ValueError(f"op {name!r}: is_cfa and is_rgb are both true")
+    if is_cfa != name.startswith("cfa_"):
+        raise ValueError(
+            f"op {name!r}: an op is named cfa_... exactly when it sets is_cfa: true"
+        )
+    if is_rgb != name.startswith("rgb_"):
+        raise ValueError(
+            f"op {name!r}: an op is named rgb_... exactly when it sets is_rgb: true"
+        )
+    if is_cfa and not requires_2d:
+        raise ValueError(f"op {name!r}: is_cfa requires requires_2d: true")
+    if is_cfa and in_channels != 1:
+        raise ValueError(f"op {name!r}: is_cfa requires inputs[0].channels: 1")
+    if is_rgb and in_channels != 3:
+        raise ValueError(f"op {name!r}: is_rgb requires inputs[0].channels: 3")
+
+
+def ruff_formatted(text: str) -> str:
+    """``text`` as ``ruff format`` writes ``OPS_OUT``, or ``text`` itself,
+    with a warning, when no ruff is found."""
+    ruff = os.environ.get("RUFF") or shutil.which("ruff")
+    if ruff is None:
+        print(
+            f"warning: no ruff found; {OPS_OUT.name} is unformatted and CI's "
+            "ruff format --check will fail on it. Set RUFF to CI's ruff.",
+            file=sys.stderr,
+        )
+        return text
+    result = subprocess.run(
+        [ruff, "format", "--stdin-filename", str(OPS_OUT), "-"],
+        input=text,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout
+
+
+def main() -> int:
+    if not YAML_PATH.is_file():
+        print(f"Missing catalog: {YAML_PATH}", file=sys.stderr)
+        return 1
+    try:
+        doc = load_ops_yaml(YAML_PATH)
+        validate_ops(doc.get("ops") or [])
+        resolve_attr_enums(doc)
+        text = gen_ops_py(doc)
+    except ValueError as e:
+        print(str(e), file=sys.stderr)
+        return 1
+
+    OPS_OUT.write_text(ruff_formatted(text))
+    print(f"Wrote {OPS_OUT}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

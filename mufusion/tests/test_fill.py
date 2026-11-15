@@ -1,0 +1,145 @@
+"""zeros / ones / full are lazy fill nodes."""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+import mufusion as mu
+from mufusion._array import Array
+
+
+def test_zeros_is_lazy_then_realizes():
+    z = mu.zeros((3, 4))
+    assert z._data is None
+    assert z._node is not None
+    assert z._node.op == "fill"
+    assert z._node.inputs == ()
+    assert z.dtype == np.float32
+    assert z.shape == (3, 4)
+    np.testing.assert_array_equal(z.realize(), np.zeros((3, 4), dtype=np.float32))
+
+
+def test_zeros_shape_from_tuple_list_and_ndarray_shape():
+    """Python tuple, list, and ``ndarray.shape`` all become the same meta."""
+    arr = np.zeros((3, 4), dtype=np.float32)
+    from_tuple = mu.zeros((3, 4))
+    from_list = mu.zeros([3, 4])
+    from_numpy_shape = mu.zeros(arr.shape)
+    assert from_tuple.shape == from_list.shape == from_numpy_shape.shape == (3, 4)
+    assert from_tuple.dtype == from_list.dtype == from_numpy_shape.dtype
+
+
+def test_ones_rgb():
+    t = mu.ones((2, 3, 3), dtype="float32")
+    assert t.shape == (2, 3, 3)
+    np.testing.assert_array_equal(t.realize(), np.ones((2, 3, 3), dtype=np.float32))
+
+
+def test_full_scalar_uint8():
+    t = mu.full((2, 2), 128, dtype="uint8")
+    assert t.dtype == np.uint8
+    np.testing.assert_array_equal(t.realize(), np.full((2, 2), 128, dtype=np.uint8))
+
+
+def test_full_default_dtype_python_int_is_float32():
+    t = mu.full((2, 2), 128)
+    assert t.dtype == np.float32
+    np.testing.assert_array_equal(t.realize(), np.full((2, 2), 128, dtype=np.float32))
+
+
+def test_full_inherits_numpy_scalar_dtype():
+    t = mu.full((2, 2), np.uint8(7))
+    assert t.dtype == np.uint8
+    np.testing.assert_array_equal(t.realize(), np.full((2, 2), 7, dtype=np.uint8))
+
+
+def test_full_rgb_vector():
+    t = mu.full((2, 2, 3), [1.0, 2.0, 3.0])
+    want = np.full((2, 2, 3), [1.0, 2.0, 3.0], dtype=np.float32)
+    np.testing.assert_array_equal(t.realize(), want)
+
+
+def test_full_rejects_non_broadcast_vector():
+    with pytest.raises(ValueError, match="channel count"):
+        mu.full((2, 2), [1.0, 2.0, 3.0])
+
+
+def test_zeros_like_does_not_realize_input():
+    src = Array(np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32))
+    lazy = src - 1.0
+    assert lazy._data is None
+    z = mu.zeros_like(lazy)
+    assert lazy._data is None
+    assert z.shape == lazy.shape
+    assert z.dtype == lazy.dtype
+    np.testing.assert_array_equal(z.realize(), np.zeros((2, 2), dtype=np.float32))
+    assert lazy._data is None
+
+
+def test_ones_like_dtype_override():
+    src = Array(np.zeros((2, 2), dtype=np.float32))
+    t = mu.ones_like(src, dtype="uint8")
+    assert t.dtype == np.uint8
+    np.testing.assert_array_equal(t.realize(), np.ones((2, 2), dtype=np.uint8))
+
+
+def test_full_like_uses_reference_dtype():
+    src = Array(np.zeros((2, 3), dtype=np.uint8))
+    t = mu.full_like(src, 9)
+    assert t.dtype == np.uint8
+    np.testing.assert_array_equal(t.realize(), np.full((2, 3), 9, dtype=np.uint8))
+
+
+def test_zeros_minus_one_runs():
+    t = mu.zeros((2, 2)) - 1.0
+    np.testing.assert_array_equal(t.realize(), np.full((2, 2), -1.0, dtype=np.float32))
+
+
+def test_zeros_rejects_bad_rank():
+    with pytest.raises(ValueError, match=r"\(H,W\)"):
+        mu.zeros((2, 2, 2, 2, 2))
+
+
+def test_zeros_two_channels():
+    z = mu.zeros((2, 3, 2))
+    assert z.shape == (2, 3, 2)
+    np.testing.assert_array_equal(z.realize(), np.zeros((2, 3, 2), dtype=np.float32))
+
+
+def test_full_vector_five_channels():
+    t = mu.full((2, 2, 5), [1.0, 2.0, 3.0, 4.0, 5.0])
+    want = np.full((2, 2, 5), [1.0, 2.0, 3.0, 4.0, 5.0], dtype=np.float32)
+    np.testing.assert_array_equal(t.realize(), want)
+
+
+def test_array_ingests_two_and_five_channels():
+    two = np.arange(2 * 3 * 2, dtype=np.float32).reshape(2, 3, 2)
+    five = np.arange(2 * 3 * 5, dtype=np.uint8).reshape(2, 3, 5)
+    assert Array(two).shape == (2, 3, 2)
+    assert Array(five).shape == (2, 3, 5)
+    np.testing.assert_array_equal(Array(two).realize(), two)
+    np.testing.assert_array_equal(Array(five).realize(), five)
+
+
+@pytest.mark.parametrize("shape", [(2, 2, 0), (0, 4), (3, 0), (0,)])
+def test_an_empty_fill_matches_numpy(shape):
+    for make in (
+        lambda lib: lib.zeros(shape, np.float32),
+        lambda lib: lib.ones(shape, np.uint8),
+        lambda lib: lib.full(shape, 7.0, np.float32),
+    ):
+        np.testing.assert_array_equal(make(mu).realize(), make(np))
+
+
+@pytest.mark.parametrize("shape", ["ab", True, (2.5, 3)])
+def test_initializers_reject_non_int_shape(shape):
+    for make in (mu.zeros, mu.ones, lambda s: mu.full(s, 1.0)):
+        with pytest.raises(TypeError, match="sequence of ints"):
+            make(shape)
+
+
+@pytest.mark.parametrize("shape", [(0, 4), (3, 0, 3), (0,), (0, 2, 2, 3)])
+def test_an_empty_source_realizes_to_its_shape(shape):
+    src = np.zeros(shape, dtype=np.float32)
+    np.testing.assert_array_equal(Array(src).realize(), src)

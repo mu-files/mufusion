@@ -19,8 +19,8 @@ from conftest import (
     core_image_available_for_tests,
 )
 
-import muimage as mi
-from muraw.array import Array
+import mufusion as mu
+from mufusion import Array
 from muraw.dngio import DngFile
 from muraw.imgio import (
     convert_dng_to_stream,
@@ -439,7 +439,7 @@ def test_orientation_handling(tmp_path):
 
         # Apply inverse rotation to get back to original orientation
         inverse_orientation = inverse_rotations[orientation]
-        unrotated_img = mi.orientation(
+        unrotated_img = mu.orientation(
             Array(oriented_img), orientation=int(inverse_orientation)
         )
         print(f"  After inverse rotation: {unrotated_img.shape}")

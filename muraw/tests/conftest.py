@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 import tifffile
 
-from muraw.array import Array
+from mufusion import Array
 
 logger = logging.getLogger(__name__)
 
@@ -322,7 +322,7 @@ def sample_as_cfa(rgb_img: np.ndarray, pattern: str = "RGGB") -> np.ndarray:
 
 def normalize_image(img: np.ndarray) -> np.ndarray:
     """Normalize image to float [0,1] range."""
-    from muraw.array import Array
+    from mufusion import Array
 
     if isinstance(img, Array):
         img = img.realize()
@@ -335,7 +335,7 @@ def normalize_image(img: np.ndarray) -> np.ndarray:
 
 def compute_diff_stats(img1: np.ndarray, img2: np.ndarray) -> dict:
     """Compute difference statistics between two images."""
-    from muraw.array import Array
+    from mufusion import Array
 
     if isinstance(img1, Array):
         img1 = img1.realize()

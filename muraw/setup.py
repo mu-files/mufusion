@@ -2,44 +2,10 @@
 # Copyright (c) 2026 mu-files
 
 import os
-import platform
 import sys
 
 import numpy as np
 from setuptools import Extension, setup
-
-
-def _is_android():
-    if sys.platform == "android" or hasattr(sys, "getandroidapilevel"):
-        return True
-    # Termux reports Linux. The Android dynamic linker is on the device.
-    return os.path.exists("/system/bin/linker64") or os.path.exists(
-        "/system/bin/linker"
-    )
-
-
-def host_core_binaries():
-    """Ship only the host abi3 CoreEngine extension in wheels; sdist keeps all via MANIFEST.in."""
-    system = platform.system()
-    machine = platform.machine().lower()
-    if _is_android():
-        raise RuntimeError("Android is not a published CoreEngine target")
-    if system == "Windows":
-        if machine in ("arm64", "aarch64"):
-            raise RuntimeError("Windows on ARM is not a supported CoreEngine target")
-        name = "_core_engine.windows-amd64.abi3.pyd"
-    elif system == "Darwin":
-        if machine in ("arm64", "aarch64"):
-            name = "_core_engine.macos-arm64.abi3.so"
-        else:
-            name = "_core_engine.macos-x86_64.abi3.so"
-    else:
-        if machine in ("arm64", "aarch64"):
-            name = "_core_engine.linux-aarch64.abi3.so"
-        else:
-            name = "_core_engine.linux-x86_64.abi3.so"
-    return [f"_binaries/{name}"]
-
 
 if sys.platform == "win32":
     common_compile_args = [
@@ -106,11 +72,4 @@ if rcd_extension:
 setup(
     ext_modules=ext_modules,
     include_package_data=False,
-    # All package-data lives here. A [tool.setuptools.package-data] table
-    # in pyproject.toml replaces this dict, which dropped the host binary
-    # from wheels and left only ops.yaml.
-    package_data={
-        "muraw.engines": ["catalog/ops.yaml"],
-        "muraw.engines.core": host_core_binaries(),
-    },
 )

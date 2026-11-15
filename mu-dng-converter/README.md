@@ -1,11 +1,11 @@
 # mu DNG Converter
 
 [![License](https://img.shields.io/badge/License-BSD--3--Clause-blue.svg)](LICENSE)
-[![Releases](https://img.shields.io/github/v/release/mu-files/mu-image?label=Download)](https://github.com/mu-files/mu-image/releases/latest)
+[![Releases](https://img.shields.io/github/v/release/mu-files/mufusion?label=Download)](https://github.com/mu-files/mufusion/releases/latest)
 
 A cross-platform desktop application for batch image conversion built on [muraw](../muraw/README.md).
 
-[Download latest release](https://github.com/mu-files/mu-image/releases/latest)
+[Download latest release](https://github.com/mu-files/mufusion/releases/latest)
 
 ## Create DNG
 
@@ -102,7 +102,7 @@ input                   Input FITS file or folder (.fit / .fits)
 
 ### Desktop (macOS, Windows, Linux)
 
-Download a pre-built binary from the [Releases](https://github.com/mu-files/mu-image/releases) page. No Python installation required.
+Download a pre-built binary from the [Releases](https://github.com/mu-files/mufusion/releases) page. No Python installation required.
 
 > **macOS note:** The app is signed and notarized. On first launch, macOS will show a security prompt; click **Open** to proceed. Subsequent launches open normally.
 
@@ -114,7 +114,7 @@ Install directly from GitHub using pip (Python 3.12+ required). Raspberry Pi OS 
 
 ```bash
 python3 -m venv ~/mu-dng-converter-venv
-~/mu-dng-converter-venv/bin/pip install "mu-dng-converter @ git+https://github.com/mu-files/mu-image.git#subdirectory=mu-dng-converter"
+~/mu-dng-converter-venv/bin/pip install "mu-dng-converter @ git+https://github.com/mu-files/mufusion.git#subdirectory=mu-dng-converter"
 ~/mu-dng-converter-venv/bin/mu-dng-converter
 ```
 
@@ -123,8 +123,8 @@ python3 -m venv ~/mu-dng-converter-venv
 Clone the repository and install in editable mode (Python 3.12+ required):
 
 ```bash
-git clone https://github.com/mu-files/mu-image.git
-cd mu-image/mu-dng-converter
-pip install -e .
+git clone https://github.com/mu-files/mufusion.git
+cd mufusion/mu-dng-converter
+pip install -e ../mufusion -e ../muraw -e .
 mu-dng-converter
 ```

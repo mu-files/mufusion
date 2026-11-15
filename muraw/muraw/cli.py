@@ -62,7 +62,7 @@ def cli(verbose, timing):
     )
 
     if timing != "off":
-        from .engines import set_engine_timing
+        from mufusion import set_engine_timing
 
         set_engine_timing(timing)
 
@@ -878,9 +878,9 @@ def dng_copy(
     Apply scale, demosaic (CFA to LINEAR_RAW), strip tags, and/or generate preview.
     """
     import muraw
+    from mufusion import PerfTimer
 
     from . import dngio
-    from .common import PerfTimer
     from .tiff_metadata import MetadataTags
 
     timer = PerfTimer("dng_copy", start_time=muraw._app_start_time)
@@ -1048,7 +1048,8 @@ def dng_convert(
     """Convert DNG file to image file (.tif, .jpg, .png, .jxl) with processing options."""
     import numpy as np
 
-    from .common import PerfTimer
+    from mufusion import PerfTimer
+
     from .dngio import DngFile
     from .imgio import convert_dng
     from .tiff_metadata import Orientation

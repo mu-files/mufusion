@@ -1,23 +1,26 @@
 ## High-performance image tools for Python
 
-[![CI](https://github.com/mu-files/mu-image/actions/workflows/publish.yml/badge.svg)](https://github.com/mu-files/mu-image/actions/workflows/publish.yml)
+[![CI](https://github.com/mu-files/mufusion/actions/workflows/publish.yml/badge.svg)](https://github.com/mu-files/mufusion/actions/workflows/publish.yml)
 [![License](https://img.shields.io/badge/License-BSD--3--Clause-blue.svg)](LICENSE)
 
-`mu-image` is a cross-platform toolkit for software engineers who process
+`mufusion` is a cross-platform toolkit for software engineers who process
 2D images in Python. The available set of image-processing primitives are
 highly-optimized and can be chained to run sequentially in native code.
-Where equivalent functions exist mu-image should be much faster and use less 
+Where equivalent functions exist mufusion should be much faster and use less 
 memory than numpy or opencv. But interfacing with both those frameworks is
 seamless.
 
 Included in the package is also a fully spec compliant DNG RAW decoder and
-encoder that is built completely on mu-image.
+encoder that is built completely on mufusion.
 
-The repository contains two packages:
+The repository contains three packages:
 
+- **[`mufusion`](mufusion/README.md)**: The array library, a lazy image
+  compute graph with a NumPy interface. Import `mufusion as mu`. Install
+  with `pip install mufusion`; its only dependency is NumPy.
 - **[`muraw`](muraw/README.md)**: A Python library and CLI for DNG I/O,
-  rendering, metadata, and multi-threaded batch processing. Import
-  `muraw`. Install with `pip install muraw`.
+  rendering, metadata, and multi-threaded batch processing, built on
+  `mufusion`. Import `muraw`. Install with `pip install muraw`.
 - **[`mu-dng-converter`](mu-dng-converter/README.md)**: A desktop GUI on
   `muraw` and [PyWebView](https://pywebview.flowrl.com/) for batch
   convert and transcode.
@@ -85,7 +88,7 @@ change the codec and/or rewrite metadata without a full develop.
 ## Getting started
 
 **Desktop app (macOS, Windows, Linux):** Download a pre-built binary from
-the [mu-dng-converter releases page](https://github.com/mu-files/mu-image/releases/latest).
+the [mu-dng-converter releases page](https://github.com/mu-files/mufusion/releases/latest).
 No Python install required. See
 [mu-dng-converter/README.md](mu-dng-converter/README.md).
 

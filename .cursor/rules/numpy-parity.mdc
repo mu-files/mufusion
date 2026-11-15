@@ -1,16 +1,16 @@
 ---
-description: Every mi call either gives NumPy's result or raises NotImplementedError
+description: Every mu call either gives NumPy's result or raises NotImplementedError
 alwaysApply: true
 ---
 
 # NumPy parity
 
-A call that NumPy accepts gives NumPy's result in `mi`, or it raises
+A call that NumPy accepts gives NumPy's result in `mu`, or it raises
 `NotImplementedError`. A call that NumPy rejects raises the same
-exception type in `mi`. Never a silently different result, and never a
+exception type in `mu`. Never a silently different result, and never a
 different exception.
 
-- A limit of `mi` (no empty arrays, at most 4 axes, a key form not built
+- A limit of `mu` (no empty arrays, at most 4 axes, a key form not built
   yet) is `NotImplementedError`, even where a `ValueError` or
   `IndexError` reads more naturally. The message names the limit and,
   where there is one, the call that works instead.
@@ -28,7 +28,7 @@ Deliberate differences, documented where the user reads about the op:
   saturates to the dtype's range, and rounds a fractional result to
   nearest, where NumPy wraps. Wrapping is not useful on images; a flag
   may come later if someone needs it. Do not "fix" this toward NumPy.
-- `mi.pad` with `mode="constant"` takes one `constant_values` per
+- `mu.pad` with `mode="constant"` takes one `constant_values` per
   channel on an array of 3 or more channels, and fills each channel's
   margin with its own value, such as red around an RGB image. NumPy
   rejects that call. One or two values keep NumPy's meaning. It is an
@@ -36,15 +36,15 @@ Deliberate differences, documented where the user reads about the op:
   difference is too small to be worth one. Do not remove it for parity.
 
 ```python
-# ❌ BAD: NumPy returns an empty array; mi raises a different exception
+# ❌ BAD: NumPy returns an empty array; mu raises a different exception
 raise ValueError("rows: slice results in an empty dimension")
 
 # ✅ GOOD: the same limit, as a limit
 raise NotImplementedError(
-    "rows: slice results in an empty dimension; mi.Array holds no empty arrays"
+    "rows: slice results in an empty dimension; mu.Array holds no empty arrays"
 )
 ```
 
 Where the rules interact (indexing, reshape, broadcasting, joins), check
 the invariant with generated inputs against NumPy, as
-`muraw/tests/test_index_against_numpy.py` does for indexing.
+`mufusion/tests/test_index_against_numpy.py` does for indexing.

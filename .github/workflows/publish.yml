@@ -28,7 +28,7 @@ jobs:
         run: ruff format --check
 
   build-sdist:
-    name: Build source distribution
+    name: Build source distributions
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,20 +42,23 @@ jobs:
 
       # setuptools prints a deprecation as BuildBackendWarning and still
       # exits 0. Fail the job so that warning is not only in the log.
-      - name: Build sdist
-        working-directory: muraw
+      - name: Build sdists
         run: |
           set -o pipefail
-          python -m build --sdist 2>&1 | tee "$RUNNER_TEMP/sdist-build.log"
-          if grep -q BuildBackendWarning "$RUNNER_TEMP/sdist-build.log"; then
-            echo "The sdist build printed a BuildBackendWarning." >&2
-            exit 1
-          fi
+          for project in mufusion muraw; do
+            (cd "$project" && python -m build --sdist 2>&1 | tee "$RUNNER_TEMP/sdist-$project.log")
+            if grep -q BuildBackendWarning "$RUNNER_TEMP/sdist-$project.log"; then
+              echo "The $project sdist build printed a BuildBackendWarning." >&2
+              exit 1
+            fi
+          done
 
       - uses: actions/upload-artifact@v4
         with:
           name: sdist
-          path: muraw/dist/*.tar.gz
+          path: |
+            mufusion/dist/*.tar.gz
+            muraw/dist/*.tar.gz
 
   build-wheels:
     name: Build wheels (${{ matrix.name }})
@@ -85,10 +88,19 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install cibuildwheel
-        run: pip install cibuildwheel
+      - name: Install build tools
+        run: pip install build cibuildwheel
 
-      - name: Build wheels
+      # mufusion compiles nothing: one abi3 wheel per platform, holding
+      # that platform's CoreEngine binary.
+      - name: Build mufusion wheel
+        run: python -m build --wheel --outdir dist
+        working-directory: mufusion
+        env:
+          # Prebuilt CoreEngine binary requires macOS 14+
+          MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+      - name: Build muraw wheels
         run: python -m cibuildwheel --output-dir dist
         working-directory: muraw
         env:
@@ -102,7 +114,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.name }}
-          path: muraw/dist/*.whl
+          path: |
+            mufusion/dist/*.whl
+            muraw/dist/*.whl
 
   test:
     name: Test (${{ matrix.name }})
@@ -141,23 +155,30 @@ jobs:
           name: ${{ matrix.artifact }}
           path: dist
 
-      - name: Install wheel and extras
+      # mufusion first, so muraw's dependency on it is met by the wheel
+      # from this run rather than by a release on PyPI.
+      - name: Install wheels and extras
         shell: bash
         run: |
           set -euo pipefail
-          whl=$(ls dist/muraw-*cp312*.whl | head -n 1)
-          echo "Installing ${whl}${EXTRAS}"
+          mufusion_whl=$(ls dist/mufusion-*.whl | head -n 1)
+          muraw_whl=$(ls dist/muraw-*cp312*.whl | head -n 1)
           python -m pip install --upgrade pip
-          python -m pip install "${whl}${EXTRAS}"
+          echo "Installing ${mufusion_whl}"
+          python -m pip install "${mufusion_whl}"
+          echo "Installing ${muraw_whl}${EXTRAS}"
+          python -m pip install "${muraw_whl}${EXTRAS}"
         env:
           EXTRAS: ${{ matrix.extras }}
 
       - name: Run pytest
-        # Run outside the checkout so the installed wheel wins over ./muraw/muraw source.
+        # Run outside the checkout so the installed wheels win over the
+        # mufusion/mufusion and muraw/muraw sources.
         shell: bash
         run: |
           set -euo pipefail
           cd "${RUNNER_TEMP}"
+          python -m pytest "${GITHUB_WORKSPACE}/mufusion/tests" -v
           python -m pytest "${GITHUB_WORKSPACE}/muraw/tests" -v
 
   publish:
@@ -169,7 +190,8 @@ jobs:
     permissions:
       id-token: write
     steps:
-      # Publish sdist + Windows wheels only. macOS/Linux wheels are CI-only.
+      # Publish the sdists and the Windows wheels of mufusion and muraw
+      # only. macOS/Linux wheels are CI-only.
       - uses: actions/download-artifact@v4
         with:
           name: sdist

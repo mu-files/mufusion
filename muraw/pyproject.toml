@@ -39,6 +39,7 @@ dependencies = [
     "click",                            # 122 KB
     "defusedxml",                       # 25 KB
     "imagecodecs>=2026.3.6",            # 13 MB
+    "mufusion",
     "numpy>=2",                         # 5.1 MB
     "opencv-python-headless",           # 46 MB
     "setproctitle",                     # 13 KB
@@ -64,23 +65,11 @@ coreimage = [
 muraw = "muraw.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/mu-files/mu-image"
-Repository = "https://github.com/mu-files/mu-image"
+Homepage = "https://github.com/mu-files/mufusion/tree/main/muraw"
+Repository = "https://github.com/mu-files/mufusion"
 
 [tool.setuptools]
-packages = [
-    "muraw",
-    "muraw.engines",
-    "muraw.engines.tools",
-    "muraw.engines.core",
-    # Public import spelling for the graph (`import muimage as mi`).
-    "muimage",
-]
-# Host-only CoreEngine binary and ops.yaml are in setup.py package_data.
-# Do not add [tool.setuptools.package-data] here: that table replaces the
-# setup.py dict, so a "_binaries/*" glob ships every arch (delvewheel
-# rejects the other Windows .pyd) and a yaml-only table ships no binary.
-# MANIFEST.in still ships all engines/core/_binaries/* in the sdist.
+packages = ["muraw"]
 
 
 [tool.pytest.ini_options]

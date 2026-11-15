@@ -2,8 +2,8 @@
 AppName=mu DNG Converter
 AppVersion={#AppVersion}
 AppPublisher=mu-files
-AppPublisherURL=https://github.com/mu-files/mu-image
-AppSupportURL=https://github.com/mu-files/mu-image/issues
+AppPublisherURL=https://github.com/mu-files/mufusion
+AppSupportURL=https://github.com/mu-files/mufusion/issues
 DefaultDirName={autopf}\mu DNG Converter
 DefaultGroupName=mu DNG Converter
 OutputDir=.

@@ -8,12 +8,12 @@ import numpy as np
 import pytest
 from conftest import generate_rgb_ramp
 
-import muimage as mi
-from muraw.array import Array, rot90, supported_dtype
-from muraw.engines import get_default_engine, graph, set_default_engine
-from muraw.engines.core import CoreEngine
-from muraw.engines.graph import EngineOp, OpMeta, flush
-from muraw.engines.ops import OPS_BY_NAME
+import mufusion as mu
+from mufusion._array import Array, rot90, supported_dtype
+from mufusion._engines import get_default_engine, graph, set_default_engine
+from mufusion._engines.core import CoreEngine
+from mufusion._engines.graph import EngineOp, OpMeta, flush
+from mufusion._engines.ops import OPS_BY_NAME
 from muraw.raw_render import DemosaicAlgorithm, demosaic
 
 
@@ -24,14 +24,14 @@ def test_catalog_engine_ops_io():
     assert "pad" in OPS_BY_NAME
     assert "orientation" in OPS_BY_NAME
     assert "cast_dtype" in OPS_BY_NAME
-    assert callable(mi.cast_dtype)
-    assert callable(mi.convert_dtype)
-    assert isinstance(mi.cfa_demosaic, EngineOp)
-    assert mi.cfa_demosaic._in_channels == (1,)
+    assert callable(mu.cast_dtype)
+    assert callable(mu.convert_dtype)
+    assert isinstance(mu.cfa_demosaic, EngineOp)
+    assert mu.cfa_demosaic._in_channels == (1,)
     x = Array(np.zeros((2, 2), dtype=np.float32))
-    assert mi.cfa_demosaic.infer_out_meta(x, {}).channels == 3
-    assert callable(mi.rgb_matrix_3x3)
-    assert callable(mi.lut)
+    assert mu.cfa_demosaic.infer_out_meta(x, {}).channels == 3
+    assert callable(mu.rgb_matrix_3x3)
+    assert callable(mu.lut)
     assert callable(flush)
     assert "view" in get_default_engine().supported_ops
 
@@ -133,21 +133,21 @@ def test_view_emit_meta_updates_origin_and_size():
 def test_orientation_emit_meta_swaps_hw():
     """TIFF 5–8 swap H×W; 1–4 keep size; origin unchanged."""
     base = Array(np.zeros((4, 6, 3), dtype=np.float32))
-    same = mi.orientation(base, orientation=3)
+    same = mu.orientation(base, orientation=3)
     assert same.meta.height == 4 and same.meta.width == 6
     assert same.meta.origin == (0, 0)
     assert same._node is not None and same._node.op == _orientation_op(3)
 
-    rot = mi.orientation(base, orientation=6)
+    rot = mu.orientation(base, orientation=6)
     assert rot.meta.height == 6 and rot.meta.width == 4
     assert rot.meta.origin == (0, 0)
 
     with pytest.raises(ValueError, match="invalid TIFF code"):
-        mi.orientation(base, orientation=0)
+        mu.orientation(base, orientation=0)
 
 
 def _orientation_op(code: int) -> str:
-    """The op ``mi.orientation`` emits for TIFF ``code``: a view for the
+    """The op ``mu.orientation`` emits for TIFF ``code``: a view for the
     codes that keep each row a row, the orientation op for the rest."""
     return "view" if code in (2, 3, 4) else "orientation"
 
@@ -174,8 +174,8 @@ def _tiff_orientation_numpy(arr: np.ndarray, code: int) -> np.ndarray:
 
 
 def test_engine_orientation_executes_all_tiff_codes(monkeypatch):
-    """mi.orientation is issued natively for TIFF 1–8."""
-    from muraw.engines.core import _engine_load
+    """mu.orientation is issued natively for TIFF 1–8."""
+    from mufusion._engines.core import _engine_load
 
     calls: List[dict] = []
     real = _engine_load.execute_graph
@@ -193,7 +193,7 @@ def test_engine_orientation_executes_all_tiff_codes(monkeypatch):
         for code in range(1, 9):
             calls.clear()
             src_t = Array(src)
-            t = mi.orientation(src_t, orientation=code)
+            t = mu.orientation(src_t, orientation=code)
             if code == 1:
                 assert t is src_t
                 assert t._node is None
@@ -212,7 +212,7 @@ def test_orientation_flips_match_the_orientation_op():
     """Codes 2–4 are a view, with the meta, pixels and canvas of the
     orientation op: a view past the edge of the result reads the same
     parent pixels."""
-    from muraw.engines.graph import emit
+    from mufusion._engines.graph import emit
 
     samples = np.arange(9 * 10 * 3, dtype=np.float32).reshape(9, 10, 3)
     windowed = Array(samples).view(left=2, top=1, width=6, height=5)
@@ -226,8 +226,8 @@ def test_orientation_flips_match_the_orientation_op():
     }
     for name, array in cases.items():
         for code in (2, 3, 4):
-            got = mi.orientation(array, orientation=code)
-            ref = emit(mi.orientation, array, orientation=code)
+            got = mu.orientation(array, orientation=code)
+            ref = emit(mu.orientation, array, orientation=code)
             assert ref._node.op == "orientation"
             assert got.meta == ref.meta, f"{name} code {code}"
             np.testing.assert_array_equal(
@@ -252,7 +252,7 @@ def test_engine_orientation_span_sandwich(monkeypatch):
     Scalar mul commutes with the pixel permute, so the pair is a spatial
     no-op and the result matches sub → mul.
     """
-    from muraw.engines.core import _engine_load
+    from mufusion._engines.core import _engine_load
 
     calls: List[dict] = []
     real = _engine_load.execute_graph
@@ -269,9 +269,9 @@ def test_engine_orientation_span_sandwich(monkeypatch):
         inv = _ORIENTATION_INVERSE[code]
         calls.clear()
         x = Array(src) - 1.0
-        x = mi.orientation(x, orientation=code)
+        x = mu.orientation(x, orientation=code)
         x = x * 2.0
-        x = mi.orientation(x, orientation=inv)
+        x = mu.orientation(x, orientation=inv)
         out = x.realize()
 
         assert len(calls) == 1, f"code {code}"
@@ -307,7 +307,7 @@ def test_crop_emit_rejects_window_outside_canvas():
 
 def test_span_crop_span_one_execute_graph(monkeypatch):
     """Native crop stays in one CoreEngine segment (C4c2)."""
-    from muraw.engines.core import _engine_load
+    from mufusion._engines.core import _engine_load
 
     calls: List[dict] = []
     real = _engine_load.execute_graph
@@ -334,7 +334,7 @@ def test_span_crop_span_one_execute_graph(monkeypatch):
 
 def test_crop_sub_crop_sub_ramp(monkeypatch):
     """input → crop → sub → crop → sub in one segment; known ramp pixels."""
-    from muraw.engines.core import _engine_load
+    from mufusion._engines.core import _engine_load
 
     calls: List[dict] = []
     real = _engine_load.execute_graph
@@ -382,13 +382,13 @@ def test_sub_mul_chain():
 def test_rgb_matrix_3x3_identity():
     eye = np.eye(3, dtype=np.float32)
     inp = np.array([[[0.25, 0.5, 0.75]]], dtype=np.float32)
-    out = mi.rgb_matrix_3x3(Array(inp), matrix=eye).realize()
+    out = mu.rgb_matrix_3x3(Array(inp), matrix=eye).realize()
     np.testing.assert_allclose(out, inp)
 
 
 def test_lut_identity_rgb():
     inp = np.array([[[0.0, 0.5, 1.0]]], dtype=np.float32)
-    out = mi.lut(Array(inp), lut=[0.0, 1.0]).realize()
+    out = mu.lut(Array(inp), lut=[0.0, 1.0]).realize()
     np.testing.assert_allclose(out, inp)
 
 
@@ -415,7 +415,7 @@ def test_convert_type_f32_to_f16_subnormals():
 
 def test_cfa_demosaic_bilinear_rggb():
     cfa = np.array([[0.2, 0.4], [0.6, 0.8]], dtype=np.float32)
-    out = mi.cfa_demosaic(
+    out = mu.cfa_demosaic(
         Array(cfa), cfa_pattern="RGGB", algorithm="bilinear"
     ).realize()
     assert out.shape == (2, 2, 3)
@@ -424,7 +424,7 @@ def test_cfa_demosaic_bilinear_rggb():
 
 def test_cfa_demosaic_ea_rggb():
     cfa = np.array([[0.2, 0.4], [0.6, 0.8]], dtype=np.float32)
-    out = mi.cfa_demosaic(Array(cfa), cfa_pattern="RGGB").realize()
+    out = mu.cfa_demosaic(Array(cfa), cfa_pattern="RGGB").realize()
     assert out.shape == (2, 2, 3)
     np.testing.assert_allclose(
         out,
@@ -444,9 +444,9 @@ def test_cfa_demosaic_ea_then_crop_matches_slice():
     """
     rng = np.random.default_rng(0)
     cfa = rng.random((17, 19), dtype=np.float32)
-    full = mi.cfa_demosaic(Array(cfa), cfa_pattern="RGGB").realize()
+    full = mu.cfa_demosaic(Array(cfa), cfa_pattern="RGGB").realize()
     fused = (
-        mi.cfa_demosaic(Array(cfa), cfa_pattern="RGGB")
+        mu.cfa_demosaic(Array(cfa), cfa_pattern="RGGB")
         .view(
             left=3,
             top=2,
@@ -468,8 +468,8 @@ def test_cfa_demosaic_ea_fast_differs_from_ea():
     cfa[2, 3] = 0.2
     cfa[2, 0] = 0.0
     cfa[2, 4] = 0.0
-    ea = mi.cfa_demosaic(Array(cfa), cfa_pattern="RGGB", algorithm="ea").realize()
-    fast = mi.cfa_demosaic(
+    ea = mu.cfa_demosaic(Array(cfa), cfa_pattern="RGGB", algorithm="ea").realize()
+    fast = mu.cfa_demosaic(
         Array(cfa), cfa_pattern="RGGB", algorithm="ea_fast"
     ).realize()
     wrap = demosaic(Array(cfa), "RGGB", algorithm=DemosaicAlgorithm.EA_FAST).realize()
@@ -481,7 +481,7 @@ def test_cfa_demosaic_ea_fast_differs_from_ea():
 def test_cfa_demosaic_rejects_unknown_algorithm():
     cfa = np.zeros((2, 2), dtype=np.float32)
     with pytest.raises(ValueError, match="algorithm"):
-        mi.cfa_demosaic(Array(cfa), cfa_pattern="RGGB", algorithm="vng")
+        mu.cfa_demosaic(Array(cfa), cfa_pattern="RGGB", algorithm="vng")
 
 
 @pytest.mark.parametrize(
@@ -494,8 +494,8 @@ def test_cfa_demosaic_rejects_unknown_algorithm():
     ],
 )
 def test_cfa_demosaic_timing_row_names_the_algorithm(algorithm, row_name):
-    from muraw.common import PerfTimer
-    from muraw.engines.graph import EngineTiming, engine_timing, set_engine_timing
+    from mufusion import PerfTimer
+    from mufusion._engines.graph import EngineTiming, engine_timing, set_engine_timing
 
     cfa = np.array([[0.2, 0.4], [0.6, 0.8]], dtype=np.float32)
     attrs = {} if algorithm is None else {"algorithm": algorithm}
@@ -503,7 +503,7 @@ def test_cfa_demosaic_timing_row_names_the_algorithm(algorithm, row_name):
     try:
         set_engine_timing(EngineTiming.OPS)
         with PerfTimer("root") as root:
-            mi.cfa_demosaic(Array(cfa), cfa_pattern="RGGB", **attrs).realize()
+            mu.cfa_demosaic(Array(cfa), cfa_pattern="RGGB", **attrs).realize()
     finally:
         set_engine_timing(prev)
 
@@ -513,13 +513,13 @@ def test_cfa_demosaic_timing_row_names_the_algorithm(algorithm, row_name):
 def test_op_rejects_bad_channels():
     rgb = Array(np.zeros((2, 2, 3), dtype=np.float32))
     with pytest.raises(ValueError, match="expected 1 channel"):
-        mi.cfa_demosaic(rgb, cfa_pattern="RGGB")
+        mu.cfa_demosaic(rgb, cfa_pattern="RGGB")
 
 
 def test_op_rejects_unknown_attr():
     x = Array(np.zeros((2, 2, 3), dtype=np.float32))
     with pytest.raises(ValueError, match="unknown attrs"):
-        mi.rgb_matrix_3x3(x, matrix=np.eye(3, dtype=np.float32), extra=1)
+        mu.rgb_matrix_3x3(x, matrix=np.eye(3, dtype=np.float32), extra=1)
 
 
 def test_array_array_sub_is_a_two_input_node():
@@ -558,15 +558,15 @@ def test_flush_then_engine_again():
     x = x - 0.0
     x = x * 1.0
     x = demosaic(x, "RGGB", algorithm=DemosaicAlgorithm.EA)
-    x = mi.rgb_matrix_3x3(x, matrix=eye)
-    x = mi.lut(x, lut=lut)
+    x = mu.rgb_matrix_3x3(x, matrix=eye)
+    x = mu.lut(x, lut=lut)
     out = x.realize()
 
     ref = demosaic(
         Array(cfa), "RGGB", algorithm=DemosaicAlgorithm.EA, dst_dtype="float32"
     )
-    ref = mi.rgb_matrix_3x3(ref, matrix=eye)
-    ref = mi.lut(ref, lut=lut).realize()
+    ref = mu.rgb_matrix_3x3(ref, matrix=eye)
+    ref = mu.lut(ref, lut=lut).realize()
     assert out.shape == (16, 16, 3)
     assert out.dtype == np.float32
     np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
@@ -574,7 +574,7 @@ def test_flush_then_engine_again():
 
 def test_apply_opcodes_single_execute():
     """Multi-opcode RGB chain runs one execute_graph."""
-    from muraw.engines.core import _engine_load
+    from mufusion._engines.core import _engine_load
     from muraw.raw_render import apply_opcodes
 
     rgb = np.full((8, 8, 3), 0.5, dtype=np.float32)
@@ -661,7 +661,7 @@ def test_core_binaries_path():
     """CoreEngine package ships platform-tagged abi3 extensions in _binaries/."""
     from pathlib import Path
 
-    import muraw.engines.core as core_pkg
+    import mufusion._engines.core as core_pkg
 
     binaries = Path(core_pkg.__file__).resolve().parent / "_binaries"
     assert binaries.is_dir()
@@ -672,7 +672,7 @@ def test_core_binaries_path():
 
 
 def test_add_completed_step_duration():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
 
     root = PerfTimer("root")
     child = root.add_completed_step("native_op (engine)", 0.025)
@@ -683,7 +683,7 @@ def test_add_completed_step_duration():
 
 
 def test_add_completed_steps_sequential_no_overlap():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
 
     root = PerfTimer("root")
     children = root.add_completed_steps(
@@ -708,7 +708,7 @@ def test_add_completed_steps_sequential_no_overlap():
 
 
 def test_engine_timing_setting():
-    from muraw.engines.graph import (
+    from mufusion._engines.graph import (
         EngineTiming,
         engine_timing,
         get_engine_timing,
@@ -728,7 +728,7 @@ def test_engine_timing_setting():
 
 
 def test_perftimer_context_manager_nests():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
 
     with PerfTimer("root") as root:
         assert PerfTimer.current() is root
@@ -747,7 +747,7 @@ def test_perftimer_context_manager_nests():
 
 
 def test_perftimer_step_is_fire_and_forget():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
 
     root = PerfTimer("root")
     a = PerfTimer.step("a")
@@ -763,7 +763,7 @@ def test_perftimer_step_is_fire_and_forget():
 
 
 def test_perftimer_step_nests_under_current_not_root():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
 
     root = PerfTimer("root")
     bucket = root.start_step("bucket")
@@ -778,7 +778,7 @@ def test_perftimer_step_nests_under_current_not_root():
 
 
 def test_perftimer_broken_stack_report():
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
 
     root = PerfTimer("root")
     child = root.start_step("a")
@@ -799,7 +799,7 @@ def test_perftimer_missed_close_then_continue_at_parent():
     skips ``L2.close()``. Outer then ``L0.start_step("L1b")`` — L0 auto-closes the
     abandoned L1 subtree (including L2) and opens L1b as the next child of L0.
     """
-    from muraw.common import PerfTimer
+    from mufusion import PerfTimer
 
     try:
         root = PerfTimer("root")
@@ -841,8 +841,8 @@ def test_perftimer_missed_close_then_continue_at_parent():
 
 
 def test_compute_times_engine_ops():
-    from muraw.common import PerfTimer
-    from muraw.engines.graph import EngineTiming, engine_timing, set_engine_timing
+    from mufusion import PerfTimer
+    from mufusion._engines.graph import EngineTiming, engine_timing, set_engine_timing
 
     prev = engine_timing
     try:
@@ -863,8 +863,8 @@ def test_compute_times_engine_ops():
 
 
 def test_core_engine_segments_no_op_children():
-    from muraw.common import PerfTimer
-    from muraw.engines.graph import EngineTiming, engine_timing, set_engine_timing
+    from mufusion import PerfTimer
+    from mufusion._engines.graph import EngineTiming, engine_timing, set_engine_timing
 
     prev = engine_timing
     try:
@@ -880,8 +880,8 @@ def test_core_engine_segments_no_op_children():
 
 
 def test_core_engine_off_no_rows_even_with_open_timer():
-    from muraw.common import PerfTimer
-    from muraw.engines.graph import EngineTiming, engine_timing, set_engine_timing
+    from mufusion import PerfTimer
+    from mufusion._engines.graph import EngineTiming, engine_timing, set_engine_timing
 
     prev = engine_timing
     try:
@@ -895,8 +895,8 @@ def test_core_engine_off_no_rows_even_with_open_timer():
 
 
 def test_compute_nests_under_current_stack_top():
-    from muraw.common import PerfTimer
-    from muraw.engines.graph import EngineTiming, engine_timing, set_engine_timing
+    from mufusion import PerfTimer
+    from mufusion._engines.graph import EngineTiming, engine_timing, set_engine_timing
 
     prev = engine_timing
     try:
@@ -912,8 +912,8 @@ def test_compute_nests_under_current_stack_top():
 
 
 def test_compute_ops_under_graph_compute():
-    from muraw.common import PerfTimer
-    from muraw.engines.graph import EngineTiming, engine_timing, set_engine_timing
+    from mufusion import PerfTimer
+    from mufusion._engines.graph import EngineTiming, engine_timing, set_engine_timing
 
     prev = engine_timing
     try:
@@ -931,10 +931,10 @@ def test_compute_ops_under_graph_compute():
 
 
 def test_realize_makes_one_engine_call():
-    from muraw.engines.core import _engine_load
+    from mufusion._engines.core import _engine_load
 
     src = np.arange(16, dtype=np.float32).reshape(4, 4)
-    x = mi.cfa_demosaic(Array(src) - 1.0, cfa_pattern="RGGB") * 2.0
+    x = mu.cfa_demosaic(Array(src) - 1.0, cfa_pattern="RGGB") * 2.0
 
     calls = {"n": 0}
     real = _engine_load.execute_graph
@@ -957,7 +957,7 @@ def test_realize_in_the_middle_matches_one_realize():
     cfa = rng.random((300, 40), dtype=np.float32)
 
     def head(source: Array) -> Array:
-        return mi.cfa_demosaic(source - 0.1, cfa_pattern="RGGB")
+        return mu.cfa_demosaic(source - 0.1, cfa_pattern="RGGB")
 
     def tail(rgb: Array) -> Array:
         return (rgb * 2.0)[5:290, 3:37]
@@ -1031,7 +1031,7 @@ def test_realized_view_walks_upstream_for_canvas_crop():
 
 def test_realized_crop_is_extra_bind(monkeypatch):
     """A hard crop's cache is an extra in_bind; the submitted graph still has the crop."""
-    from muraw.engines.core import _engine_load
+    from mufusion._engines.core import _engine_load
 
     calls: List[dict] = []
     real = _engine_load.execute_graph
@@ -1104,8 +1104,8 @@ def _one_segment_chain() -> Array:
 
 
 def _ramp_reshaped_and_broadcast() -> Array:
-    ramp = mi.linspace(np.zeros(3, np.float32), np.ones(3, np.float32), 5) * 0.5
-    return mi.broadcast_to(ramp[None, ...], (4, 5, 3))
+    ramp = mu.linspace(np.zeros(3, np.float32), np.ones(3, np.float32), 5) * 0.5
+    return mu.broadcast_to(ramp[None, ...], (4, 5, 3))
 
 
 @pytest.mark.parametrize(
@@ -1161,7 +1161,7 @@ def test_strided_numpy_crop_ported_and_image_op():
     np.testing.assert_array_equal(got, crop - 1.0)
 
     codes = parent.astype(np.uint16)[1:3, 1:3]
-    identity = mi.cfa_fix_bad_pixels_constant(
+    identity = mu.cfa_fix_bad_pixels_constant(
         Array(codes), constant=1000, bayer_phase=0
     ).realize()
     np.testing.assert_array_equal(identity, codes)
@@ -1174,7 +1174,7 @@ def test_fix_bad_pixels_on_float32_keeps_the_dtype_and_does_not_round():
     x[2, 2] = 0.0
     x[1, 1] = 1.0
     x[1, 3] = 2.0
-    out = mi.cfa_fix_bad_pixels_constant(Array(x), constant=0, bayer_phase=1).realize()
+    out = mu.cfa_fix_bad_pixels_constant(Array(x), constant=0, bayer_phase=1).realize()
     assert out.dtype == np.float32
     expected = x.copy()
     expected[2, 2] = 4.75
@@ -1725,13 +1725,13 @@ def test_suggested_conversion_ingests():
 
 def test_unsupported_dtype_argument_names_the_fix():
     with pytest.raises(ValueError, match="float64 is not supported"):
-        mi.zeros((2, 2), dtype="float64")
+        mu.zeros((2, 2), dtype="float64")
     with pytest.raises(ValueError, match="float64 is not supported"):
         Array(np.zeros((2, 2), np.float32)).astype(np.float64)
     with pytest.raises(ValueError, match="dtype int64 is not supported"):
-        mi.full((2, 2), 1, dtype=int)
+        mu.full((2, 2), 1, dtype=int)
     with pytest.raises(ValueError, match="'rgb8' is not a dtype"):
-        mi.zeros((2, 2), dtype="rgb8")
+        mu.zeros((2, 2), dtype="rgb8")
 
 
 def test_dtype_strings_and_types_map_to_supported_dtype():

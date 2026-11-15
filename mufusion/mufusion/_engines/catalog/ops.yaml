@@ -1,0 +1,1782 @@
+# This file is generated; do not edit it here.
+
+# Regenerate the public Python API:
+#   python -m mufusion._engines.tools.gen_ops
+#   (writes mufusion/_engines/ops.py)
+#
+# A comment on an op says what the op computes, as any engine must
+# compute it. How one engine runs it (its loops and SIMD paths, the
+# precision of a reduced-depth path, its limits, its engine_opts keys)
+# is documented with that engine.
+#
+# engine_opts, an optional string attr of some ops, is a JSON object
+# keyed by engine name. An engine ignores the keys of other engines and
+# strictly validates its own.
+#
+# inputs/outputs: one output. Any number of inputs (fill has none), one
+#   entry per input, in node order.
+#   variable: true on the last input entry means a node has that input one
+#     or more times, so the op takes a variable number of inputs. Only the
+#     last entry may be variable.
+#   channels: <int> | any | same | {from_attr: <key>}
+#     - inputs: int or any
+#     - outputs: int, same (same = copy input 0), or from_attr (the
+#       value of the i32 attr <key>)
+#   dtype matches input 0 unless outputs.dtype is set, also with a
+#     geometry: a dtype name, {from_attr: <key>}, float_of_input (input
+#     0's dtype when it is a float, and float32 when it is an integer, as
+#     NumPy's true division writes a float), or float_holding_input (the
+#     narrowest float that holds every value of input 0 exactly: float16
+#     for bool or uint8, float32 for uint16, and a float stays itself).
+#   height/width/origin match input 0 unless outputs.geometry is set.
+#   geometry: <policy> — named emit-meta policy (not attr inspection).
+#     Codegen wires geometry: foo → graph._out_meta_foo (implement the fn in graph.py).
+#     A policy builds the whole output meta, so an output with a geometry
+#     may leave channels out when the policy decides it (reshape).
+#
+# Op properties. Each is false unless written as `true` on the op, and none
+# is implied by another property or by the op name.
+#   requires_2d: the op needs rows. It reads rows above or below the one it
+#     writes, or it uses the row coordinate itself (distance from an optical
+#     center, a gain grid indexed by row, a CFA pattern's row phase). It
+#     cannot run on a one-row (N,) array.
+#   is_cfa: the input is a color filter array mosaic: one channel, where each
+#     pixel holds one color sample in a repeating pattern such as Bayer RGGB.
+#     Requires inputs[0].channels: 1 and requires_2d: true.
+#   is_rgb: the input is three-channel RGB. Requires inputs[0].channels: 3.
+#   is_cfa and is_rgb are never both true; with neither, the op takes any
+#   layout.
+#   needs_frame_index: the op must know which frame it is writing. An
+#     array is a stack of frames, each a packed (rows, columns, channels)
+#     image; an array with frame_axis 0 is one frame per index of axis 0,
+#     and any other array is one frame. The
+#     engine runs every op one frame at a time, except transpose, which
+#     takes every frame in one call. Most ops treat every frame the same
+#     and need every array of a node to have the same number of frames;
+#     an op with this property instead has per-frame attrs, or reads a
+#     different source frame than it writes, so its arrays may have
+#     different frame counts. An attr names channels or frames, never both:
+#     on an array whose channels are on axis 0, the caller sends the frame
+#     attr (dest_frames, src_frames, frame_reps, frame_before and
+#     frame_after, per_frame). Excludes is_cfa and is_rgb.
+# Naming rule, checked by both generators against the properties: an is_cfa
+# op's name starts with cfa_, an is_rgb op's name starts with rgb_, and no
+# other op uses either prefix.
+
+version: 1
+
+# Shared attr value sets. A string attr references one with `enum: <name>`;
+# gen_ops inlines the values into the generated attr spec for validation.
+enums:
+  pad_mode:
+    - constant
+    - edge
+    - symmetric
+    - reflect
+  ramp_along:
+    - columns
+    - rows
+  view_mode:
+    - crop_oob_valid
+    - crop_oob_invalid
+    - crop_reset_canvas
+  demosaic_algorithm:
+    - bilinear
+    - ea
+    - ea_fast
+  color_model:
+    - RGB
+    - GRAY
+    - YUV
+    - YCrCb
+    - HSV
+    - HLS
+  gain_clamp:
+    - none
+    - max_one
+    - zero_one
+  resize_interpolation:
+    - auto
+    - nearest
+    - area
+    - bilinear
+
+ops:
+  # Arithmetic with a constant: x + value, x - value, x * value, x / value.
+  # value holds one number for every sample, or one per channel. With
+  # per_frame: true it holds one number per frame instead, used for every
+  # channel of that frame. Integer results are rounded to the nearest
+  # integer and saturate to the dtype's range, where NumPy wraps them;
+  # every engine saturates. The exception is that div_scalar
+  # writes float32 for an integer input. reverse: true computes value - x
+  # and value / x.
+  - name: add_scalar
+    needs_frame_index: true
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs:
+      - key: value
+        type: f32_array
+        count: 0
+      - key: per_frame
+        type: bool
+        count: 1
+        optional: true
+
+  - name: sub_scalar
+    needs_frame_index: true
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs:
+      - key: value
+        type: f32_array
+        count: 0
+      - key: per_frame
+        type: bool
+        count: 1
+        optional: true
+      - key: reverse
+        type: bool
+        count: 1
+        optional: true
+
+  - name: mul_scalar
+    needs_frame_index: true
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs:
+      - key: value
+        type: f32_array
+        count: 0
+      - key: per_frame
+        type: bool
+        count: 1
+        optional: true
+
+  - name: div_scalar
+    needs_frame_index: true
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_of_input
+    attrs:
+      - key: value
+        type: f32_array
+        count: 0
+      - key: per_frame
+        type: bool
+        count: 1
+        optional: true
+      - key: reverse
+        type: bool
+        count: 1
+        optional: true
+
+  # x // value, the quotient toward negative infinity. The result has the
+  # input's dtype. An integer division by zero writes 0. A float division
+  # by zero writes a signed infinity, 0/0 and an infinite dividend over a
+  # finite divisor are NaN, and -0 keeps its sign. reverse puts value first.
+  - name: floor_div_scalar
+    needs_frame_index: true
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs:
+      - key: value
+        type: f32_array
+        count: 0
+      - key: per_frame
+        type: bool
+        count: 1
+        optional: true
+      - key: reverse
+        type: bool
+        count: 1
+        optional: true
+
+  # The smaller of each sample and value. The result has the input's dtype.
+  # A NaN on either side gives NaN. The minimum of +0 and -0 is -0.
+  - name: minimum_scalar
+    needs_frame_index: true
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs:
+      - key: value
+        type: f32_array
+        count: 0
+      - key: per_frame
+        type: bool
+        count: 1
+        optional: true
+
+  # The larger of each sample and value. The result has the input's dtype.
+  # A NaN on either side gives NaN. The maximum of +0 and -0 is +0.
+  - name: maximum_scalar
+    needs_frame_index: true
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs:
+      - key: value
+        type: f32_array
+        count: 0
+      - key: per_frame
+        type: bool
+        count: 1
+        optional: true
+
+  # Arithmetic between two arrays of one dtype: a + b, a - b, a * b,
+  # a / b. The inputs broadcast as in NumPy: each input's frames, rows,
+  # columns, and channels match the output's, or are 1 and are read at
+  # index 0 for every output index. Integer results are rounded to the
+  # nearest integer and saturate to the dtype's range, where NumPy wraps
+  # them; every engine saturates. divide writes float32 for integer
+  # inputs.
+  - name: add
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: broadcast
+    attrs: []
+
+  - name: subtract
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: broadcast
+    attrs: []
+
+  - name: multiply
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: broadcast
+    attrs: []
+
+  - name: divide
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_of_input
+        geometry: broadcast
+    attrs: []
+
+  # x1 // x2, the quotient toward negative infinity, broadcast as divide
+  # is. The result has the inputs' dtype. An integer division by zero
+  # writes 0. A float division by zero writes a signed infinity, 0/0 and
+  # an infinite dividend over a finite divisor are NaN, and -0 keeps its
+  # sign.
+  - name: floor_divide
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: broadcast
+    attrs: []
+
+  # The smaller of each pair, broadcast as add is. The result has the
+  # inputs' dtype. A NaN on either side gives NaN. The minimum of +0 and
+  # -0 is -0.
+  - name: minimum
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: broadcast
+    attrs: []
+
+  # The larger of each pair, broadcast as add is. The result has the
+  # inputs' dtype. A NaN on either side gives NaN. The maximum of +0 and
+  # -0 is +0.
+  - name: maximum
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: broadcast
+    attrs: []
+
+  # Nonzero is true, including NaN and inf. +0 and -0 are false. The
+  # result is bool. The inputs broadcast as in NumPy: each input's
+  # frames, rows, columns, and channels match the output's, or are 1
+  # and are read at index 0 for every output index.
+  - name: logical_and
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: bool
+        geometry: broadcast
+    attrs: []
+
+  - name: logical_or
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: bool
+        geometry: broadcast
+    attrs: []
+
+  - name: logical_xor
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: bool
+        geometry: broadcast
+    attrs: []
+
+  # Nonzero is false, including NaN and inf. +0 and -0 are true. The
+  # result is bool.
+  - name: logical_not
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: bool
+    attrs: []
+
+  # The bits of the two inputs, which have one dtype. The result has
+  # that dtype. A bool is 0 or 1. The inputs broadcast as in NumPy: each
+  # input's frames, rows, columns, and channels match the output's, or
+  # are 1 and are read at index 0 for every output index.
+  - name: bitwise_and
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: broadcast
+    attrs: []
+
+  - name: bitwise_or
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: broadcast
+    attrs: []
+
+  - name: bitwise_xor
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: broadcast
+    attrs: []
+
+  # The complement of an integer: every bit flips, and the result has
+  # the input's dtype. A bool exchanges 0 and 1.
+  - name: bitwise_not
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs: []
+
+  # Bits that leave the dtype are discarded. A count greater than or
+  # equal to the width stores 0. Both inputs have the result's dtype.
+  # The inputs broadcast as bitwise_and does.
+  - name: left_shift
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: broadcast
+    attrs: []
+
+  - name: right_shift
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: broadcast
+    attrs: []
+
+  # The number of set bits in each sample, written as uint8.
+  - name: bitwise_count
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: uint8
+    attrs: []
+
+  # The square root of each sample. A negative sample is NaN. A float16 or
+  # float32 input keeps its dtype. A bool or uint8 input gives float16, and
+  # a uint16 input gives float32.
+  - name: sqrt
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # The cube root of each sample. A negative sample keeps its sign, so
+  # the cube root of -8 is -2. -0 gives -0. An infinity keeps its sign,
+  # and a NaN stays NaN. A float16 or float32 input keeps its dtype. A
+  # bool or uint8 input gives float16, and a uint16 input gives float32.
+  - name: cbrt
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # The sine of each sample, with the angle in radians. An infinite sample
+  # is NaN. A float16 or float32 input keeps its dtype. A bool or uint8
+  # input gives float16, and a uint16 input gives float32.
+  - name: sin
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # The cosine of each sample, with the angle in radians. An infinite
+  # sample is NaN. A float16 or float32 input keeps its dtype. A bool or
+  # uint8 input gives float16, and a uint16 input gives float32.
+  - name: cos
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # The tangent of each sample, with the angle in radians. An infinite
+  # sample is NaN. A float16 or float32 input keeps its dtype. A bool or
+  # uint8 input gives float16, and a uint16 input gives float32.
+  - name: tan
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # The inverse sine of each sample, in radians in [-pi/2, pi/2]. A sample
+  # outside [-1, 1] is NaN. A float16 or float32 input keeps its dtype. A
+  # bool or uint8 input gives float16, and a uint16 input gives float32.
+  - name: arcsin
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # The inverse cosine of each sample, in radians in [0, pi]. A sample
+  # outside [-1, 1] is NaN. A float16 or float32 input keeps its dtype. A
+  # bool or uint8 input gives float16, and a uint16 input gives float32.
+  - name: arccos
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # The inverse tangent of each sample, in radians in [-pi/2, pi/2]. +inf
+  # gives pi/2 and -inf gives -pi/2. A float16 or float32 input keeps its
+  # dtype. A bool or uint8 input gives float16, and a uint16 input gives
+  # float32.
+  - name: arctan
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # e raised to each sample. +inf gives inf, -inf gives 0, and a NaN stays
+  # NaN. A large positive overflows to inf, and a large negative underflows
+  # to 0. A float16 or float32 input keeps its dtype. A bool or uint8 input
+  # gives float16, and a uint16 input gives float32.
+  - name: exp
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # 2 raised to each sample. An integer sample is that power of two, until
+  # it overflows. +inf gives inf, -inf gives 0, and a NaN stays NaN. A
+  # float16 or float32 input keeps its dtype. A bool or uint8 input gives
+  # float16, and a uint16 input gives float32.
+  - name: exp2
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # e raised to each sample, minus one. 0 and -0 give 0 with the same sign.
+  # +inf gives inf, -inf gives -1, and a NaN stays NaN. A float16 or float32
+  # input keeps its dtype. A bool or uint8 input gives float16, and a uint16
+  # input gives float32.
+  - name: expm1
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # The natural logarithm of each sample. A negative sample and -inf are
+  # NaN. 0 and -0 give -inf. +inf gives inf, and a NaN stays NaN. A float16
+  # or float32 input keeps its dtype. A bool or uint8 input gives float16,
+  # and a uint16 input gives float32.
+  - name: log
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # The base-2 logarithm of each sample. A positive power of two is that
+  # integer. A negative sample and -inf are NaN. 0 and -0 give -inf. +inf
+  # gives inf, and a NaN stays NaN. A float16 or float32 input keeps its
+  # dtype. A bool or uint8 input gives float16, and a uint16 input gives
+  # float32.
+  - name: log2
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # The base-10 logarithm of each sample. A negative sample and -inf are
+  # NaN. 0 and -0 give -inf. +inf gives inf, and a NaN stays NaN. A float16
+  # or float32 input keeps its dtype. A bool or uint8 input gives float16,
+  # and a uint16 input gives float32.
+  - name: log10
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # The natural logarithm of one plus each sample. 0 and -0 give 0 with the
+  # same sign. -1 gives -inf. A sample below -1 is NaN. +inf gives inf, and
+  # a NaN stays NaN. A float16 or float32 input keeps its dtype. A bool or
+  # uint8 input gives float16, and a uint16 input gives float32.
+  - name: log1p
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # Each sample rounded to the nearest integer, and a half rounded to the
+  # even integer. A float16 or float32 input keeps its dtype. A bool or
+  # uint8 input gives float16, and a uint16 input gives float32.
+  - name: rint
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+    attrs: []
+
+  # Each sample rounded toward negative infinity. The result has the
+  # input's dtype. A bool or integer sample is unchanged.
+  - name: floor
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs: []
+
+  # Each sample rounded toward positive infinity. The result has the
+  # input's dtype. A bool or integer sample is unchanged.
+  - name: ceil
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs: []
+
+  # Each sample rounded toward zero. The result has the input's dtype. A
+  # bool or integer sample is unchanged, and trunc of -0 is -0.
+  - name: trunc
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs: []
+
+  # The absolute value of each sample. The result has the input's dtype.
+  # A bool or integer sample is unchanged. -0 becomes +0, and a NaN stays
+  # a NaN.
+  - name: abs
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs: []
+
+  # Each sample with its sign flipped. The result has the input's dtype.
+  # +0 becomes -0 and -0 becomes +0. A NaN keeps a flipped sign bit. An
+  # integer result saturates, so a uint8 or uint16 sample becomes 0.
+  - name: negative
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs: []
+
+  # Each sample rounded to `decimals` places after the decimal point, or
+  # to the left of it when `decimals` is negative. A half rounds to the
+  # even integer. The result has the input's dtype. A float16 or float32
+  # sample is scaled by a power of ten in that dtype. An integer sample
+  # with a negative `decimals` is scaled in float64, and a result that
+  # does not fit the dtype wraps. An integer sample with a non-negative
+  # `decimals` is unchanged.
+  - name: round
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs:
+      - key: decimals
+        type: i32
+        count: 1
+
+  # sqrt(x1*x1 + x2*x2) for each pair of samples, scaled so a finite pair
+  # does not overflow. The inputs broadcast as add does. A float16 or
+  # float32 input keeps its dtype. An integer input gives float32.
+  - name: hypot
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_of_input
+        geometry: broadcast
+    attrs: []
+
+  # base ** exponent for each pair of samples. The two inputs have one
+  # dtype, and the result has that dtype. The inputs broadcast as in
+  # NumPy: each input's frames, rows, columns, and channels match the
+  # output's, or are 1 and are read at index 0 for every output index.
+  #
+  # An integer power ignores fast and wraps in the dtype. 0 ** 0 is 1,
+  # and an exponent of 0 is 1 for every base.
+  #
+  # fast defaults to false, the real power. An exponent of 0 is 1 for
+  # every base, including NaN and infinity, and a base of 1 is 1 for
+  # every exponent. A negative base raised to a value that is not an
+  # integer is NaN. A negative base raised to an integer-valued exponent
+  # keeps the sign of an odd exponent. A zero raised to a negative
+  # exponent is infinity, and a negative zero keeps the sign when the
+  # exponent is an odd integer.
+  #
+  # fast true is faster and less accurate. A float power then is
+  # exp2(exponent * log2(base)), computed in float32. It does not support
+  # a negative base: the result is NaN, including when the exponent is an
+  # integer. An exponent of 0 is 1 for a positive finite base and NaN
+  # otherwise. A base of 1 raised to a non-finite exponent is NaN, and a
+  # negative zero loses its sign.
+  - name: power
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: broadcast
+    attrs:
+      - key: fast
+        type: bool
+        count: 1
+        optional: true
+
+  # The signed angle in radians, in [-pi, pi], from the positive x-axis to
+  # (input 1, input 0), as NumPy's arctan2(x1, x2). Both inputs have one
+  # dtype. The inputs broadcast as add does. A float16 or float32 input
+  # keeps its dtype. A bool or uint8 input gives float16, and a uint16
+  # input gives float32.
+  - name: arctan2
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+        dtype: float_holding_input
+        geometry: broadcast
+    attrs: []
+
+  # The base (input 0) with sources written over it, in input order, so a
+  # later source overwrites an earlier one. Source i is input i + 1.
+  #
+  # Each per-source parameter is a table and a _source list that names the
+  # source of each entry, in the table's order. A source has at most one
+  # entry in a table, and the entries fill it end to end; the order of the
+  # entries does not change which source is drawn over which.
+  #
+  # Each source is placed by exactly one of:
+  # - by_position: entry (top, left), as
+  #   out[top:top + h, left:left + w] = source. The source must fit
+  #   inside the base.
+  # - by_row_col: entry rows then cols, h dest rows and then w dest
+  #   columns, as out[np.ix_(rows, cols)] = source. Every index is inside
+  #   the base, and a later duplicate in one list replaces an earlier one.
+  #
+  # dest_channels: entry the dest channel of each source channel. A source
+  # with no entry writes channel c to dest channel c. A repeated dest
+  # channel takes the later source channel, as in NumPy. dest_frames does
+  # the same for frames. A source less precise than the base is converted
+  # to the base's dtype.
+  - name: composite
+    needs_frame_index: true
+    inputs:
+      - channels: any
+      - channels: any
+        variable: true
+    outputs:
+      - channels: same
+    attrs:
+      - key: by_position
+        type: i32_array
+        count: 0
+        optional: true
+      - key: by_position_source
+        type: i32_array
+        count: 0
+        optional: true
+      - key: by_row_col
+        type: i32_array
+        count: 0
+        optional: true
+      - key: by_row_col_source
+        type: i32_array
+        count: 0
+        optional: true
+      - key: dest_channels
+        type: i32_array
+        count: 0
+        optional: true
+      - key: dest_channels_source
+        type: i32_array
+        count: 0
+        optional: true
+      - key: dest_frames
+        type: i32_array
+        count: 0
+        optional: true
+      - key: dest_frames_source
+        type: i32_array
+        count: 0
+        optional: true
+
+  # Constant dest: no input. Shape/dtype live on the output array.
+  - name: fill
+    inputs: []
+    outputs:
+      - channels: same
+    attrs:
+      - key: value
+        type: f32_array
+        count: 0
+
+  # start + index * step, computed in float32 and then stored as the dest
+  # dtype. No input. along=columns: one row, one component, the index
+  # is the column. along=rows: one component per column, the index is the
+  # row. stop, when set, replaces the last sample on that axis.
+  - name: ramp
+    inputs: []
+    outputs:
+      - channels: same
+    attrs:
+      - key: along
+        type: string
+        count: 1
+        enum: ramp_along
+      - key: start
+        type: f32_array
+        count: 0
+      - key: step
+        type: f32_array
+        count: 0
+      - key: stop
+        type: f32_array
+        count: 0
+        optional: true
+
+  # c0 + c1 r^2 + c2 r^4 + ..., computed in float32. No input; the output
+  # is float32 with one channel. coefficients holds c0, c1, ... (one to
+  # six). Sample (row, col) of the output sits at x0 + col * spacing_x,
+  # y0 + row * spacing_y (0 and 1 when not set), and r is its distance
+  # from (center_x, center_y) divided by radius.
+  - name: radial_polynomial
+    requires_2d: true
+    inputs: []
+    outputs:
+      - channels: 1
+        dtype: float32
+    attrs:
+      - key: coefficients
+        type: f64_array
+        count: 0
+      - key: center_x
+        type: f64
+        count: 1
+      - key: center_y
+        type: f64
+        count: 1
+      - key: radius
+        type: f64
+        count: 1
+      - key: x0
+        type: f64
+        count: 1
+        optional: true
+      - key: y0
+        type: f64
+        count: 1
+        optional: true
+      - key: spacing_x
+        type: f64
+        count: 1
+        optional: true
+      - key: spacing_y
+        type: f64
+        count: 1
+        optional: true
+      - key: engine_opts
+        type: string
+        count: 1
+        optional: true
+
+  # ROI view: emit meta via geometry: view (_out_meta_view).
+  - name: view
+    needs_frame_index: true
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: view
+    attrs:
+      - key: top
+        type: i32
+        count: 1
+      - key: left
+        type: i32
+        count: 1
+      - key: width
+        type: i32
+        count: 1
+      - key: height
+        type: i32
+        count: 1
+      # crop_oob_valid (the default) keeps the input's canvas, and dest may
+      # sit past the view window. crop_oob_invalid keeps the input's canvas
+      # and clips dest to the view window. crop_reset_canvas makes the view
+      # window the canvas, at origin (0, 0), and clips dest to it.
+      - key: mode
+        type: string
+        count: 1
+        optional: true
+        enum: view_mode
+      # Dest channel i reads src_channels[i]. Omit for identity 0..C-1.
+      - key: src_channels
+        type: i32_array
+        count: 0
+        optional: true
+      # Dest frame i reads src_frames[i]. Omit for identity 0..F-1.
+      - key: src_frames
+        type: i32_array
+        count: 0
+        optional: true
+      # Dest row y reads source row top + y * row_step. Omit for 1.
+      # Step -1 is a flip along this axis.
+      - key: row_step
+        type: i32
+        count: 1
+        optional: true
+      # Dest column x reads source column left + x * col_step. Omit for 1.
+      - key: col_step
+        type: i32
+        count: 1
+        optional: true
+
+  # Grow height and width. channel_before / channel_after add constant
+  # channels; that requires mode constant. frame_before / frame_after add
+  # frames, in any mode. constant_values is the four spatial edges, then
+  # the fills before and after the source's channels, then the fills
+  # before and after its frames (prepare accepts length 4, 6, or 8; an
+  # omitted fill is 0). fill_values replaces constant_values with one
+  # fill per channel: every padded sample of channel c, on any side and in
+  # any added frame, is fill_values[c]. It has one value, or one per
+  # channel of the source, and needs mode constant, no constant_values and
+  # no channel pad. The fill is rounded and saturated to the dtype.
+  - name: pad
+    needs_frame_index: true
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: pad
+    attrs:
+      - key: top
+        type: i32
+        count: 1
+      - key: bottom
+        type: i32
+        count: 1
+      - key: left
+        type: i32
+        count: 1
+      - key: right
+        type: i32
+        count: 1
+      - key: channel_before
+        type: i32
+        count: 1
+        optional: true
+      - key: channel_after
+        type: i32
+        count: 1
+        optional: true
+      - key: frame_before
+        type: i32
+        count: 1
+        optional: true
+      - key: frame_after
+        type: i32
+        count: 1
+        optional: true
+      - key: mode
+        type: string
+        count: 1
+        optional: true
+        enum: pad_mode
+      - key: constant_values
+        type: f32_array
+        count: 0
+        optional: true
+      - key: fill_values
+        type: f32_array
+        count: 0
+        optional: true
+
+  # Repeat the source. row_reps, col_reps, and channel_reps are the
+  # counts after NumPy's right-aligned padding with leading 1s, and
+  # frame_reps (1 when omitted) repeats frames. Each must be >= 1. The
+  # public mu.tile parses reps; this op takes the counts.
+  # row_repeats and col_repeats (1 when omitted) repeat each row and each
+  # column in place, as np.repeat, before the copies of row_reps and
+  # col_reps: dest column x reads source column
+  # (x % (width * col_repeats)) // col_repeats, and rows likewise.
+  - name: tile
+    needs_frame_index: true
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: tile
+    attrs:
+      - key: row_reps
+        type: i32
+        count: 1
+      - key: col_reps
+        type: i32
+        count: 1
+      - key: channel_reps
+        type: i32
+        count: 1
+      - key: frame_reps
+        type: i32
+        count: 1
+        optional: true
+      - key: row_repeats
+        type: i32
+        count: 1
+        optional: true
+      - key: col_repeats
+        type: i32
+        count: 1
+        optional: true
+
+  # Gather rows and columns by index, as np.take along each axis: dest
+  # row y reads source row row_indices[y], and dest column x reads source
+  # column col_indices[x]. A missing list is the identity. Every index is
+  # in range of the source; indices may repeat, skip, and reorder.
+  - name: take
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: take
+    attrs:
+      - key: row_indices
+        type: i32_array
+        count: 0
+        optional: true
+      - key: col_indices
+        type: i32_array
+        count: 0
+        optional: true
+
+  # Resample the rows and columns of a 2D image to out_rows x out_cols.
+  # Each channel and each frame is resampled the same way.
+  #
+  # scale_rows and scale_cols are output pixels per input pixel. Both are
+  # set or neither is; without them the scale of an axis is its output
+  # length over its input length. An output pixel is placed by its center:
+  # source row (dest_row + 0.5) / scale_rows - 0.5, and the same for
+  # columns. With scale set the inverse map may pass the edge of the input.
+  #
+  # interpolation, auto when absent:
+  #   nearest   the source sample nearest that point; a point halfway
+  #             between two samples takes the later one. So dest row y
+  #             reads source row floor((y + 0.5) / scale_rows), which
+  #             with size alone is floor((2 y + 1) in_rows /
+  #             (2 out_rows)).
+  #   bilinear  the 2 x 2 interpolant.
+  #   area      on an axis that shrinks, output pixel col covers source
+  #             columns [col / scale_cols, (col + 1) / scale_cols); each
+  #             source pixel contributes its overlap, and the sum is divided
+  #             by the window's length. The same for rows. On an axis that
+  #             grows it is nearest.
+  #   auto      per axis: area when the scale is below 1, bilinear when it
+  #             is above 1, and a copy of the axis when it is exactly 1.
+  #
+  # A sample read outside the source's readable rect (its canvas when its
+  # oob_valid is true, else the source itself) takes the pad in mode,
+  # reflect when absent, as the pad op computes it; constant fills with
+  # constant_values, one value or one per channel (one per frame on a
+  # (C, H, W) array), 0 when absent. The result has the source's dtype; an
+  # integer result is rounded to nearest and saturated.
+  - name: resize
+    requires_2d: true
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: resize
+    attrs:
+      - key: out_rows
+        type: i32
+        count: 1
+      - key: out_cols
+        type: i32
+        count: 1
+      - key: scale_rows
+        type: f64
+        count: 1
+        optional: true
+      - key: scale_cols
+        type: f64
+        count: 1
+        optional: true
+      - key: interpolation
+        type: string
+        count: 1
+        optional: true
+        enum: resize_interpolation
+      - key: mode
+        type: string
+        count: 1
+        optional: true
+        enum: pad_mode
+      - key: constant_values
+        type: f32_array
+        count: 0
+        optional: true
+
+  # TIFF/EXIF orientation 1–8: emit meta via geometry: orientation.
+  - name: orientation
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: orientation
+    attrs:
+      - key: orientation
+        type: i32
+        count: 1
+
+  # Permute the three axes, as np.transpose(x, axes): output axis i is input
+  # axis axes[i]. Input and output may differ in frame_axis, so this is
+  # the op that moves an array between CHW and packed. Only the graph
+  # builder emits it: identity emits nothing, and the permutations that are
+  # an orientation or a view emit those ops.
+  - name: transpose
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        geometry: transpose
+    attrs:
+      - key: axes
+        type: i32_array
+        count: 3
+
+  # The same samples, in the same order, read as another shape, as
+  # np.reshape(x, shape). shape is the output's buffer shape: 1 to 3 axes
+  # (count 0 is variable), with the same sample count as the input. The
+  # dtype does not change.
+  - name: reshape
+    inputs:
+      - channels: any
+    outputs:
+      - geometry: reshape
+    attrs:
+      - key: shape
+        type: i32_array
+        count: 0
+
+  # Bayer CFA to RGB. algorithm picks the method (default ea):
+  #   bilinear  DNG SDK bilinear, halo 1.
+  #   ea        Hamilton–Adams, halo 3. RGB clamped to [0, 1].
+  #   ea_fast   OpenCV EA: axis-pick green and bilinear chroma, halo 1.
+  #             RGB clamped to [0, 1].
+  # cfa_pattern names the colours of the 2×2 block at the first sample of
+  # the input's canvas, so a crop that keeps its parent's canvas keeps its
+  # parent's pattern.
+  - name: cfa_demosaic
+    is_cfa: true
+    requires_2d: true
+    inputs:
+      - channels: 1
+    outputs:
+      - channels: 3
+    attrs:
+      - key: cfa_pattern
+        type: string
+        count: 1
+      - key: algorithm
+        type: string
+        count: 1
+        optional: true
+        enum: demosaic_algorithm
+      - key: engine_opts
+        type: string
+        count: 1
+        optional: true
+
+  # NumPy's x @ matrix on each pixel's channels. matrix has one row per
+  # input channel and `columns` values per row, row-major. The output has
+  # `columns` channels. Up to 32 input and 32 output channels. Computed in
+  # float32; integer results round to nearest and saturate.
+  - name: matmul
+    inputs:
+      - channels: any
+    outputs:
+      - channels:
+          from_attr: columns
+    attrs:
+      - key: matrix
+        type: f32_array
+        count: 0  # input channels * columns
+      - key: columns
+        type: i32
+        count: 1
+
+  # Convert between the color models named by src_model and dst_model.
+  # RGB to GRAY drops the channel axis:
+  #   Y = 0.299 R + 0.587 G + 0.114 B
+  # An (H, W, 3) or (3, H, W) image becomes (H, W). A stack
+  # (N, H, W, 3) becomes (N, H, W). GRAY to RGB writes that channel
+  # into R, G, and B, a copy of the sample, so an (H, W) image becomes
+  # (H, W, 3). It is not an inverse of those weights. A one-channel
+  # image, (H, W, 1) or (1, H, W), is the same gray input.
+  # The result has the input's dtype. RGB to GRAY computes the sum in
+  # float32. An integer result rounds to nearest, half away from zero,
+  # and saturates. A float16 result is that float32 value rounded to
+  # float16. The same model is not a node: the caller returns the
+  # input. YUV, YCrCb, HSV, and HLS are named and not computed yet.
+  - name: convert_colormodel
+    inputs:
+      - channels: any
+    outputs:
+      - geometry: convert_colormodel
+    attrs:
+      - key: src_model
+        type: string
+        count: 1
+        enum: color_model
+      - key: dst_model
+        type: string
+        count: 1
+        enum: color_model
+
+  - name: rgb_matrix_3x3
+    is_rgb: true
+    inputs:
+      - channels: 3
+    outputs:
+      - channels: same
+    attrs:
+      - key: matrix
+        type: f32_array
+        count: 9
+
+  - name: lut
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs:
+      - key: lut
+        type: f32_array
+        count: 0  # any length >= 1
+
+  - name: convert_dtype
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype:
+          from_attr: dest_dtype
+    attrs:
+      - key: dest_dtype
+        type: string
+        count: 1
+      - key: src_bits
+        type: i32
+        count: 1
+        optional: true
+      - key: dst_bits
+        type: i32
+        count: 1
+        optional: true
+      - key: clip_max
+        type: f32
+        count: 1
+        optional: true
+
+  # Each sample stored in dest_dtype, as the same number. Unlike
+  # convert_dtype there is no range scale and no clip. A float stored as
+  # an integer is truncated toward zero, and a value outside the
+  # destination range saturates to it: NaN and a negative become 0, and
+  # an infinity becomes the destination maximum. An integer keeps its
+  # value, saturated when the destination is a narrower integer. A float
+  # stored as a float keeps its value in the destination precision,
+  # including NaN and inf. A numeric sample becomes bool when it is
+  # nonzero: 0 and float -0 are false, and every other value, including
+  # NaN and inf, is true. A bool sample becomes 0 or 1 in the destination
+  # dtype.
+  - name: cast_dtype
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+        dtype:
+          from_attr: dest_dtype
+    attrs:
+      - key: dest_dtype
+        type: string
+        count: 1
+
+  - name: mono_lut
+    inputs:
+      - channels: 1
+    outputs:
+      - channels: 1
+        dtype:
+          from_attr: dest_dtype
+    attrs:
+      - key: lut
+        type: f32_array
+        count: 0
+      - key: src_bits
+        type: i32
+        count: 1
+      - key: dst_bits
+        type: i32
+        count: 1
+      - key: dest_dtype
+        type: string
+        count: 1
+
+  - name: rgb_transform
+    is_rgb: true
+    inputs:
+      - channels: 3
+    outputs:
+      - channels: 3
+        dtype:
+          from_attr: dest_dtype
+    attrs:
+      - key: input_lut
+        type: f32_array
+        count: 0
+        optional: true
+      - key: matrix
+        type: f32_array
+        count: 9
+        optional: true
+      - key: output_lut
+        type: f32_array
+        count: 0
+        optional: true
+      - key: src_bits
+        type: i32
+        count: 1
+      - key: dst_bits
+        type: i32
+        count: 1
+      - key: dest_dtype
+        type: string
+        count: 1
+      - key: hue_preserving
+        type: bool
+        count: 1
+
+  - name: rgb_clip_and_transform
+    is_rgb: true
+    inputs:
+      - channels: 3
+    outputs:
+      - channels: 3
+        dtype: float32
+    attrs:
+      - key: clip_max
+        type: f32_array
+        count: 3
+      - key: matrix
+        type: f32_array
+        count: 9
+
+  # DNG linearization: subtract BlackLevel (a black_repeat_rows ×
+  # black_repeat_cols pattern per sample, plus the optional per-column and
+  # per-row deltas), then scale by WhiteLevel. The DNG SDK applies the same
+  # tags to CFA and LinearRaw images, so cfa_normalize_raw and
+  # rgb_normalize_raw take the same attrs and share one kernel.
+  # rgb_normalize_raw is for three-channel LinearRaw; monochrome LinearRaw
+  # uses cfa_normalize_raw, whose kernel does not depend on the CFA
+  # pattern. The black pattern and the deltas start at the first sample of
+  # the input's canvas, so a crop that keeps its parent's canvas keeps its
+  # parent's black.
+  - name: cfa_normalize_raw
+    is_cfa: true
+    requires_2d: true
+    inputs:
+      - channels: 1
+    outputs:
+      - channels: 1
+        dtype: float32
+    attrs:
+      - key: black_level
+        type: f32_array
+        count: 0
+      - key: black_repeat_rows
+        type: i32
+        count: 1
+      - key: black_repeat_cols
+        type: i32
+        count: 1
+      - key: white_level
+        type: f32_array
+        count: 0
+      - key: black_delta_h
+        type: f32_array
+        count: 0
+        optional: true
+      - key: black_delta_v
+        type: f32_array
+        count: 0
+        optional: true
+      - key: linearization_table
+        type: i32_array
+        count: 0
+        optional: true
+
+  - name: rgb_normalize_raw
+    is_rgb: true
+    requires_2d: true
+    inputs:
+      - channels: 3
+    outputs:
+      - channels: 3
+        dtype: float32
+    attrs:
+      - key: black_level
+        type: f32_array
+        count: 0
+      - key: black_repeat_rows
+        type: i32
+        count: 1
+      - key: black_repeat_cols
+        type: i32
+        count: 1
+      - key: white_level
+        type: f32_array
+        count: 0
+      - key: black_delta_h
+        type: f32_array
+        count: 0
+        optional: true
+      - key: black_delta_v
+        type: f32_array
+        count: 0
+        optional: true
+      - key: linearization_table
+        type: i32_array
+        count: 0
+        optional: true
+
+  # DNG HueSatMap with a single value plane (ProfileHueSatMapDims value
+  # divisions == 1). The table is indexed by hue and saturation only, so the
+  # op is invariant to scaling the input RGB: scale the input by k and the
+  # output scales by k, up to the output clamp at 1.0. map_data is the raw
+  # DNG table, hue-major within a plane: [hue][sat][3] of
+  # (hue_shift_deg, sat_scale, val_scale).
+  - name: rgb_apply_hue_sat_map
+    is_rgb: true
+    inputs:
+      - channels: 3
+    outputs:
+      - channels: 3
+        dtype: float32
+    attrs:
+      - key: map_data
+        type: f32_array
+        count: 0
+      - key: hue_divs
+        type: i32
+        count: 1
+      - key: sat_divs
+        type: i32
+        count: 1
+      - key: engine_opts
+        type: string
+        count: 1
+        optional: true
+
+  # DNG HueSatMap / LookTable with two or more value planes: the table is
+  # indexed by hue, saturation and value, so unlike rgb_apply_hue_sat_map the op
+  # is not invariant to scaling the input RGB. map_data is the raw DNG table,
+  # value-major: [val][hue][sat][3] of (hue_shift_deg, sat_scale, val_scale)
+  # — note value is the outermost axis in the data even though it is the
+  # third entry of the DNG dims tag.
+  - name: rgb_apply_hue_sat_val_map
+    is_rgb: true
+    inputs:
+      - channels: 3
+    outputs:
+      - channels: 3
+        dtype: float32
+    attrs:
+      - key: map_data
+        type: f32_array
+        count: 0
+      - key: hue_divs
+        type: i32
+        count: 1
+      - key: sat_divs
+        type: i32
+        count: 1
+      - key: val_divs
+        type: i32
+        count: 1
+      - key: engine_opts
+        type: string
+        count: 1
+        optional: true
+
+  # DNG ProfileGainTableMap: each RGB pixel times a gain looked up in a
+  # gain table, input 1, of shape (points_v, points_h, table_points).
+  # The table's rows and columns are a grid over x's canvas; its third axis is indexed by the pixel's weight,
+  # weights[0] * r + weights[1] * g + weights[2] * b
+  #   + weights[3] * min(r, g, b) + weights[4] * max(r, g, b),
+  # times exposure_weight_gain, clamped to [0, 1], and raised to gamma.
+  # The gain is the table interpolated trilinearly at the pixel's grid
+  # position and weight. A pixel's position is its center as a fraction
+  # of the canvas, (col + 0.5) / canvas_width and (row + 0.5) /
+  # canvas_height; table sample (0, 0) is at origin_x, origin_y and its
+  # neighbors spacing_x and spacing_y on, in the same fractions, as DNG
+  # gives them. Past the grid's first or last column or row a pixel takes
+  # that column's or row's gains. On a crop the op gives the crop of the
+  # op on the image the crop was cut from. clamp is none, max_one or
+  # zero_one (DNG without overrange support clamps to [0, 1]). The result
+  # has x's dtype.
+  - name: rgb_apply_gain_table_map
+    is_rgb: true
+    requires_2d: true
+    inputs:
+      - channels: 3
+      - channels: any
+    outputs:
+      - channels: 3
+    attrs:
+      - key: origin_x
+        type: f64
+        count: 1
+      - key: origin_y
+        type: f64
+        count: 1
+      - key: spacing_x
+        type: f64
+        count: 1
+      - key: spacing_y
+        type: f64
+        count: 1
+      - key: weights
+        type: f32_array
+        count: 5
+      - key: gamma
+        type: f64
+        count: 1
+      - key: exposure_weight_gain
+        type: f64
+        count: 1
+      - key: clamp
+        type: string
+        count: 1
+        optional: true
+        enum: gain_clamp
+      - key: engine_opts
+        type: string
+        count: 1
+        optional: true
+
+  - name: warp_rectilinear
+    needs_frame_index: true
+    requires_2d: true
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs:
+      - key: radial_params
+        type: f64_array
+        count: 0
+      - key: num_planes
+        type: i32
+        count: 1
+      - key: num_coeffs
+        type: i32
+        count: 1
+      - key: tangential_params
+        type: f64_array
+        count: 0
+        optional: true
+      - key: center_x
+        type: f64
+        count: 1
+      - key: center_y
+        type: f64
+        count: 1
+      - key: use_bicubic
+        type: bool
+        count: 1
+
+  # DNG GainMap: samples of x times a low-resolution gain map, input 1,
+  # interpolated bilinearly to each pixel. The map is
+  # (points_v, points_h) or (points_v, points_h, map_planes); plane p, a
+  # channel or the frame of a (C, H, W) array, reads map plane
+  # min(p, map_planes - 1). Every position is on x's canvas, so on a crop
+  # the op gives the crop of the op on the image the crop was cut from.
+  # Map sample (0, 0) is at canvas column map_x0 and row map_y0, and its
+  # neighbors map_spacing_x and map_spacing_y pixels on; a DNG origin,
+  # measured from pixel centers, is origin_h * canvas_width - 0.5. Past the
+  # map's first or last column or row a pixel takes that column's or row's
+  # gain. Only samples in the area (top, left, bottom, right on the
+  # canvas; an empty area, or none, is the whole canvas), at row_pitch and
+  # col_pitch from its top-left corner, on planes start_plane ..
+  # start_plane + num_planes - 1 (every plane when not set) change; the
+  # rest are copied. clamp is none, max_one (at most 1, as DNG GainMap
+  # clamps) or zero_one. The result has x's dtype: a uint16 code is
+  # multiplied by the gain, rounded, and saturated at 65535 whatever clamp
+  # is.
+  - name: apply_gain_map
+    needs_frame_index: true
+    requires_2d: true
+    inputs:
+      - channels: any
+      - channels: any
+    outputs:
+      - channels: same
+    attrs:
+      - key: map_x0
+        type: f64
+        count: 1
+      - key: map_y0
+        type: f64
+        count: 1
+      - key: map_spacing_x
+        type: f64
+        count: 1
+      - key: map_spacing_y
+        type: f64
+        count: 1
+      - key: top
+        type: i32
+        count: 1
+        optional: true
+      - key: left
+        type: i32
+        count: 1
+        optional: true
+      - key: bottom
+        type: i32
+        count: 1
+        optional: true
+      - key: right
+        type: i32
+        count: 1
+        optional: true
+      - key: start_plane
+        type: i32
+        count: 1
+        optional: true
+      - key: num_planes
+        type: i32
+        count: 1
+        optional: true
+      - key: row_pitch
+        type: i32
+        count: 1
+        optional: true
+      - key: col_pitch
+        type: i32
+        count: 1
+        optional: true
+      - key: clamp
+        type: string
+        count: 1
+        optional: true
+        enum: gain_clamp
+      - key: engine_opts
+        type: string
+        count: 1
+        optional: true
+
+  # DNG MapPolynomial: samples in the area (top, left, bottom, right; 0 and
+  # 0 mean the whole axis), at row_pitch and col_pitch from its top-left
+  # corner, on planes start_plane .. start_plane + num_planes - 1, become
+  # c0 + c1 x + ... + c_degree x^degree clamped to [-1, 1]. coefficients
+  # holds degree + 1 values for every plane, or num_planes * (degree + 1),
+  # one set per plane. A plane is a channel, or a frame of a (C, H, W)
+  # array.
+  - name: map_polynomial
+    needs_frame_index: true
+    requires_2d: true
+    inputs:
+      - channels: any
+    outputs:
+      - channels: same
+    attrs:
+      - key: top
+        type: i32
+        count: 1
+      - key: left
+        type: i32
+        count: 1
+      - key: bottom
+        type: i32
+        count: 1
+      - key: right
+        type: i32
+        count: 1
+      - key: start_plane
+        type: i32
+        count: 1
+      - key: num_planes
+        type: i32
+        count: 1
+      - key: row_pitch
+        type: i32
+        count: 1
+      - key: col_pitch
+        type: i32
+        count: 1
+      - key: coefficients
+        type: f32_array
+        count: 0
+      - key: degree
+        type: i32
+        count: 1
+      - key: engine_opts
+        type: string
+        count: 1
+        optional: true
+
+  # DNG FixBadPixelsConstant on a Bayer mosaic: a sample equal to constant
+  # becomes the mean of its same-colour neighbours that are not: the four
+  # diagonal ones of a green site, the four at distance 2 on the row and
+  # column of a red or blue site. On uint16, as in the SDK, constant is cut
+  # to 16 bits and the mean is rounded; on float32 constant is compared as
+  # given and the mean is not rounded. bayer_phase names the colour of the
+  # first sample of the array's canvas as the DNG spec defines it (0 red,
+  # 1 green on a red row, 2 green on a blue row, 3 blue; the SDK reads it
+  # the other way round), so a crop that keeps its parent's canvas keeps
+  # its parent's phase. The image edge is the array's readable rect: an
+  # oob_valid view's parent, else the array itself. A neighbour past it is
+  # replaced as the SDK does, by the sample of the same colour in the two
+  # outer rows or columns. A sample with no good neighbour keeps the
+  # constant.
+  - name: cfa_fix_bad_pixels_constant
+    is_cfa: true
+    requires_2d: true
+    inputs:
+      - channels: 1
+    outputs:
+      - channels: 1
+    attrs:
+      - key: constant
+        type: i32
+        count: 1
+      - key: bayer_phase
+        type: i32
+        count: 1

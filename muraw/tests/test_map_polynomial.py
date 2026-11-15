@@ -1,7 +1,7 @@
 """``map_polynomial`` (DNG MapPolynomial) against a NumPy port of the DNG
 SDK's ``RefBaselineMapPoly32``.
 
-NumPy has no such function, so each case compares ``mi`` with
+NumPy has no such function, so each case compares ``mu`` with
 ``_reference``. The engine kernels are built with ``-ffast-math``, which
 may fuse a multiply and an add, so the comparison allows a few float32
 rounding steps instead of asking for equal bits.
@@ -10,8 +10,8 @@ rounding steps instead of asking for equal bits.
 import numpy as np
 import pytest
 
-import muimage as mi
-from muraw.array import Array
+import mufusion as mu
+from mufusion import Array
 
 _HEIGHT = 40
 _WIDTH = 53
@@ -143,7 +143,7 @@ def _attrs(
 
 
 def _mi_map_polynomial(x, attrs):
-    return mi.map_polynomial(x, **attrs)
+    return mu.map_polynomial(x, **attrs)
 
 
 def _assert_close(got, want):
@@ -288,7 +288,7 @@ CASES = {
 
 
 def run_case(name):
-    """The case's ``mi`` result, realized."""
+    """The case's ``mu`` result, realized."""
     src, attrs, before, after = CASES[name]
     x = Array(src)
     if before is not None:
@@ -341,7 +341,7 @@ def test_map_polynomial_on_chw_matches_hwc():
         coefficients=_PER_PLANE_SETS[4:],
     )
     chw = Array(np.ascontiguousarray(np.moveaxis(hwc, -1, 0)), channel_axis=0)
-    got = mi.moveaxis(_mi_map_polynomial(chw, attrs), 0, -1).realize()
+    got = mu.moveaxis(_mi_map_polynomial(chw, attrs), 0, -1).realize()
     _assert_close(got, _reference(hwc, **attrs))
 
 

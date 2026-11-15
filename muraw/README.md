@@ -1,5 +1,5 @@
 <p align="center" style="background-color: white; padding: 20px 0; margin: 0 0 30px 0;">
-  <img src="https://raw.githubusercontent.com/mu-files/mu-image/main/muraw/assets/muIcon_muimg_full.png" alt="muraw logo" width="400">
+  <img src="https://raw.githubusercontent.com/mu-files/mufusion/main/muraw/assets/muIcon_muimg_full.png" alt="muraw logo" width="400">
 </p>
 
 # muraw
@@ -72,7 +72,7 @@ To install the latest development version directly from GitHub:
 ```toml
 [project]
 dependencies = [
-    "muraw @ git+https://github.com/mu-files/mu-image.git#subdirectory=muraw",
+    "muraw @ git+https://github.com/mu-files/mufusion.git#subdirectory=muraw",
 ]
 ```
 
@@ -81,9 +81,9 @@ dependencies = [
 Clone the repository and install the package in editable mode:
 
 ```bash
-git clone https://github.com/mu-files/mu-image.git
-cd mu-image/muraw
-pip install -e .
+git clone https://github.com/mu-files/mufusion.git
+cd mufusion/muraw
+pip install -e ../mufusion -e .
 ```
 
 **Note**: muraw includes C/C++ extensions that are compiled during install. macOS and Linux have built-in C compilers and require no additional setup. Windows users installing from source need [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/). Pre-built Windows wheels are available when installing from PyPI.
@@ -323,7 +323,7 @@ The test suite covers DNG reading, writing, rendering, metadata handling, and CL
 **Requires:** `pip install muraw[all]` (pytest is included in the `[all]` extra)
 
 ```bash
-cd /path/to/mu-image/muraw
+cd /path/to/mufusion/muraw
 venv/bin/pytest tests/
 ```
 

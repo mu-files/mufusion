@@ -19,12 +19,11 @@ from typing import IO, Any, Sequence, TypeAlias
 import numpy as np
 from numpy.typing import DTypeLike
 
-import muimage as mi
+import mufusion as mu
+from mufusion import Array, PerfTimer
 
 # Package imports
 from . import raw_render
-from .array import Array
-from .common import PerfTimer
 from .compress import compress_ifd, deswizzle_cfa_data
 from .deps import (
     cv2_proxy as cv2,
@@ -650,7 +649,7 @@ class DngPage(tifffile.TiffPage):
         # Apply orientation rotation
         orientation = self.get_tag("Orientation")
         if orientation is not None:
-            result = mi.orientation(result, orientation=int(orientation))
+            result = mu.orientation(result, orientation=int(orientation))
 
         return result.convert_type(output_dtype)
 

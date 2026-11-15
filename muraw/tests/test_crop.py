@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-import muimage as mi
-from muraw.array import Array
+import mufusion as mu
+from mufusion import Array
 from muraw.raw_render import DemosaicAlgorithm, demosaic
 from muraw.tiff_metadata import Orientation
 
@@ -78,7 +78,7 @@ def test_view_rotate_crop_maps_canvas():
         width=side,
         height=side,
     )
-    t = mi.orientation(t, orientation=Orientation.ROTATE_90_CW)
+    t = mu.orientation(t, orientation=Orientation.ROTATE_90_CW)
     t = t.crop(left=-6, top=0, width=2 * w, height=side)
     from_source = t.realize()
 
@@ -102,7 +102,7 @@ def test_crop_rotate_crop_rejects_second():
         width=side,
         height=side,
     )
-    t = mi.orientation(t, orientation=Orientation.ROTATE_90_CW)
+    t = mu.orientation(t, orientation=Orientation.ROTATE_90_CW)
     with pytest.raises(ValueError, match="outside the readable rect"):
         t.crop(left=-6, top=0, width=2 * w, height=side)
 
@@ -195,7 +195,7 @@ def test_newaxis_lifts_mono_to_rank3():
     ingested = Array(mono[:, :, None])
     assert ingested.shape == (4, 5, 1)
     assert ingested[:, :, 0].shape == (4, 5)
-    lazy = mi.zeros((4, 5))
+    lazy = mu.zeros((4, 5))
     lazy_lifted = lazy[:, :, None]
     assert lazy_lifted._node.op == "reshape"
     assert lazy_lifted._node.inputs == (lazy,)
@@ -203,7 +203,7 @@ def test_newaxis_lifts_mono_to_rank3():
     np.testing.assert_array_equal(
         lazy_lifted.realize(), np.zeros((4, 5, 1), dtype=np.float32)
     )
-    filled = mi.zeros((2, 3, 1))
+    filled = mu.zeros((2, 3, 1))
     assert filled.shape == (2, 3, 1)
     dropped = filled[:, :, 0]
     assert dropped.shape == (2, 3)
@@ -440,7 +440,7 @@ def test_realized_slice_is_its_own_canvas():
 
 
 def _demosaiced(x):
-    return mi.cfa_demosaic(x, cfa_pattern="RGGB").realize()
+    return mu.cfa_demosaic(x, cfa_pattern="RGGB").realize()
 
 
 def test_demosaic_of_a_slice_pads_at_the_slice_edge():
@@ -481,7 +481,7 @@ def test_normalize_of_a_slice_keeps_the_parents_black():
     key = np.s_[5:31, 7:51]
 
     def normalized(x):
-        return mi.cfa_normalize_raw(
+        return mu.cfa_normalize_raw(
             x,
             black_level=np.array([100, 120, 140, 160, 180, 200], np.float32),
             black_repeat_rows=3,
