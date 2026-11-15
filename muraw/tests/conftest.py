@@ -6,6 +6,7 @@
 Provides shared test utilities for DNG validation and comparison.
 """
 
+import importlib.util
 import logging
 import subprocess
 from pathlib import Path
@@ -17,6 +18,11 @@ import tifffile
 from mufusion import Array
 
 logger = logging.getLogger(__name__)
+
+# VNG and RCD run only with the optional muraw-demosaic package, and RCD
+# only when that package was built with it.
+HAS_VNG = importlib.util.find_spec("muraw_demosaic") is not None
+HAS_RCD = HAS_VNG and importlib.util.find_spec("muraw_demosaic._rcd") is not None
 
 
 # =============================================================================

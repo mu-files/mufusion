@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 from enum import IntEnum, StrEnum
 from typing import TYPE_CHECKING, Any
@@ -77,6 +78,23 @@ class DemosaicAlgorithm(StrEnum):
         from .common import enum_from_string
 
         return enum_from_string(cls, value)
+
+
+def available_demosaic_algorithms() -> list[DemosaicAlgorithm]:
+    """The demosaic algorithms this install can run. ``VNG`` needs the
+    optional muraw-demosaic package, and ``RCD`` needs that package built
+    with RCD enabled; the others always run."""
+    algorithms = [
+        DemosaicAlgorithm.BILINEAR,
+        DemosaicAlgorithm.EA,
+        DemosaicAlgorithm.EA_FAST,
+        DemosaicAlgorithm.OPENCV_EA,
+    ]
+    if importlib.util.find_spec("muraw_demosaic") is not None:
+        algorithms.append(DemosaicAlgorithm.VNG)
+        if importlib.util.find_spec("muraw_demosaic._rcd") is not None:
+            algorithms.append(DemosaicAlgorithm.RCD)
+    return algorithms
 
 
 # =============================================================================
@@ -439,12 +457,14 @@ def _demosaic_vng_rcd_opencv(
 
     if algorithm == "RCD":
         try:
-            from . import _rcd
+            from muraw_demosaic import _rcd
         except ImportError as e:
             raise ImportError(
-                "RCD demosaicing is not available. RCD is GPL-licensed and must be "
-                "enabled separately. See README.md for instructions to enable RCD, "
-                "or use a different algorithm (VNG, OPENCV_EA, BILINEAR, EA, EA_FAST)."
+                "RCD demosaicing is not available. RCD is GPL-licensed and is "
+                "built only by the muraw-demosaic package, from source, after it "
+                "is enabled; see muraw-demosaic/README.md in the mufusion "
+                "repository. Or use another algorithm (BILINEAR, EA, EA_FAST, "
+                "OPENCV_EA)."
             ) from e
         if arr.dtype != np.float32:
             raise ValueError(f"RCD kernel requires float32 CFA, got {arr.dtype}")
@@ -453,7 +473,15 @@ def _demosaic_vng_rcd_opencv(
         demosaic_step.close()
 
     elif algorithm == "VNG":
-        from . import _vng
+        try:
+            from muraw_demosaic import _vng
+        except ImportError as e:
+            raise ImportError(
+                "VNG demosaicing needs the muraw-demosaic package, which is built "
+                "from source; see muraw-demosaic/README.md in the mufusion "
+                "repository. Or use another algorithm (BILINEAR, EA, EA_FAST, "
+                "OPENCV_EA)."
+            ) from e
 
         if arr.dtype != np.uint16:
             raise ValueError(f"VNG kernel requires uint16 CFA, got {arr.dtype}")

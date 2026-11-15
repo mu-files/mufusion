@@ -968,7 +968,8 @@ def test_realize_in_the_middle_matches_one_realize():
     np.testing.assert_array_equal(split, whole)
 
 
-def test_demosaic_vng_rcd_opencv_matches_demosaic():
+def test_demosaic_vng_matches_demosaic():
+    pytest.importorskip("muraw_demosaic", reason="VNG needs muraw-demosaic")
     from muraw.raw_render import _demosaic_vng_rcd_opencv
 
     rng = np.random.default_rng(4)
@@ -977,6 +978,12 @@ def test_demosaic_vng_rcd_opencv_matches_demosaic():
     ref = demosaic(Array(cfa), "RGGB", algorithm=DemosaicAlgorithm.VNG).realize()
     np.testing.assert_array_equal(out, ref)
 
+
+def test_demosaic_opencv_ea_matches_demosaic():
+    from muraw.raw_render import _demosaic_vng_rcd_opencv
+
+    rng = np.random.default_rng(4)
+    cfa = rng.integers(0, 1000, size=(16, 16), dtype=np.uint16)
     out_ea = _demosaic_vng_rcd_opencv(cfa, "RGGB", "OPENCV_EA")
     ref_ea = demosaic(
         Array(cfa), "RGGB", algorithm=DemosaicAlgorithm.OPENCV_EA

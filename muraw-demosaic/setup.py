@@ -44,9 +44,9 @@ else:
         "-flto",
     ]
 
-# VNG demosaic extension (stays in public; LGPL/CDDL)
+# VNG demosaic extension (LGPL v2.1 / CDDL v1.0)
 vng_extension = Extension(
-    "muraw._vng",
+    "muraw_demosaic._vng",
     sources=["c-src/demosaic/vng.c"],
     include_dirs=[np.get_include()],
     extra_compile_args=common_compile_args,
@@ -58,7 +58,7 @@ rcd_source = "c-src/demosaic/rcd.c"
 rcd_extension = None
 if os.path.exists(rcd_source):
     rcd_extension = Extension(
-        "muraw._rcd",
+        "muraw_demosaic._rcd",
         sources=[rcd_source],
         include_dirs=[np.get_include()],
         extra_compile_args=common_compile_args,

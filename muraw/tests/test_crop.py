@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from conftest import HAS_VNG
 
 import mufusion as mu
 from mufusion import Array
@@ -458,7 +459,18 @@ def test_demosaic_of_a_slice_pads_at_the_slice_edge():
 
 
 @pytest.mark.parametrize(
-    "algorithm", [a for a in DemosaicAlgorithm if a != DemosaicAlgorithm.RCD]
+    "algorithm",
+    [
+        pytest.param(
+            a,
+            marks=pytest.mark.skipif(
+                a == DemosaicAlgorithm.VNG and not HAS_VNG,
+                reason="VNG needs the muraw-demosaic package",
+            ),
+        )
+        for a in DemosaicAlgorithm
+        if a != DemosaicAlgorithm.RCD
+    ],
 )
 def test_demosaic_of_an_odd_slice_keeps_the_parents_pattern(algorithm):
     """``cfa_pattern`` is at the first sample of the canvas, so a slice at an

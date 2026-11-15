@@ -47,8 +47,9 @@ The repository contains three packages:
 
 ### RAW rendering (`muraw`)
 
-- **Demosaicing**: `BILINEAR`, `VNG`, `RCD`, `EA`, `EA_FAST`, and
-  `OPENCV_EA`.
+- **Demosaicing**: `BILINEAR`, `EA`, `EA_FAST`, and `OPENCV_EA`, plus
+  `VNG` and `RCD` with the optional `muraw-demosaic` package, built from
+  source.
 - **Opcode and color**: Linearization, DNG opcodes, color matrices, and
   tone curves.
 - **macOS**: Built-in renderer or Apple Core Image.

@@ -125,4 +125,4 @@ muraw/tests/test_outputs/
 muraw/tests/dngfiles/
 
 # GPL-licensed RCD demosaic (user-enabled, not distributed)
-muraw/c-src/demosaic/rcd.c
+muraw-demosaic/c-src/demosaic/rcd.c

@@ -13,7 +13,10 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from click.testing import CliRunner
 from conftest import (
+    HAS_RCD,
+    HAS_VNG,
     OutputPathManager,
     compute_diff_stats,
     core_image_available_for_tests,
@@ -21,6 +24,7 @@ from conftest import (
 
 import mufusion as mu
 from mufusion import Array
+from muraw.cli import cli
 from muraw.dngio import DngFile
 from muraw.imgio import (
     convert_dng_to_stream,
@@ -546,6 +550,18 @@ def test_raw_stage(tmp_path):
             )
 
         print(f"\n✓ All {len(stages)} stages passed")
+
+
+@pytest.mark.parametrize("command", ["raw-stage", "copy", "convert"])
+def test_demosaic_choices_list_vng_and_rcd_only_when_they_run(command):
+    """The --demosaic choices name VNG and RCD only when muraw-demosaic is
+    installed with them, and always name the algorithms muraw runs itself."""
+    result = CliRunner().invoke(cli, ["dng", command, "--help"])
+    assert result.exit_code == 0, result.output
+    for name in ("BILINEAR", "EA_FAST", "OPENCV_EA"):
+        assert name in result.output
+    assert ("VNG" in result.output) == HAS_VNG
+    assert ("RCD" in result.output) == HAS_RCD
 
 
 if __name__ == "__main__":

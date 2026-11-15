@@ -12,7 +12,7 @@ Python library for reading, writing, and rendering Adobe DNG (Digital Negative) 
 
 - **DNG Read/Write**: Full support for reading, writing, and modifying Adobe DNG (Digital Negative) files.
 - **RAW Rendering Pipeline**: Complete implementation of DNG rendering pipeline (linearization, demosaicing, opcodes, color correction, tone curves). On macOS can opt between built-in renderer and Core Image renderer.
-- **Multiple Demosaicing Algorithms**: BILINEAR, VNG, RCD (optional), EA, EA_FAST, OPENCV_EA
+- **Multiple Demosaicing Algorithms**: BILINEAR, EA, EA_FAST, OPENCV_EA, and VNG and RCD with the optional muraw-demosaic package
 - **XMP Support**: Renderer supports Temperature, Tint, Exposure, Curves, and radial distortion from XMP metadata.
 - **Metadata Handling**: User-friendly TIFF/EXIF/XMP tag handling with automatic type conversion
 - **Compression**: Uncompressed, JPEG, JPEG XL support with multi-core parallel compression for tiled formats
@@ -86,7 +86,7 @@ cd mufusion/muraw
 pip install -e ../mufusion -e .
 ```
 
-**Note**: muraw includes C/C++ extensions that are compiled during install. macOS and Linux have built-in C compilers and require no additional setup. Windows users installing from source need [Microsoft C++ Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/). Pre-built Windows wheels are available when installing from PyPI.
+**Note**: muraw is pure Python and compiles nothing. The `VNG` and `RCD` demosaic algorithms are C extensions in the separate [muraw-demosaic](../muraw-demosaic) package, which is built from source and is not on PyPI. Install it only to use those two algorithms: `pip install ./muraw-demosaic` from the checkout.
 
 ## API Overview
 
@@ -378,17 +378,13 @@ The following DNG features are not yet implemented:
 
 **Demosaicing Algorithms**: muraw includes several demosaicing algorithms with different quality/speed tradeoffs:
 - **BILINEAR**: Good quality, fast (default for most operations)
-- **VNG**: High quality, slower
+- **VNG** (needs [muraw-demosaic](../muraw-demosaic)): High quality, slower
 - **EA**: Hamilton–Adams (default for convert / camera RGB)
 - **EA_FAST**: Single-pass axis-pick green + bilinear chroma; faster, lower quality
 - **OPENCV_EA**: OpenCV edge-aware demosaic (comparison / visualization only)
-- **RCD** (optional, GPL-licensed): High quality, slower
+- **RCD** (needs [muraw-demosaic](../muraw-demosaic) built with RCD, GPL-licensed): High quality, slower
 
-The RCD (Ratio Corrected Demosaicing) algorithm is disabled by default because it's licensed under **GPL v3**, which is separate from muraw's BSD-3-Clause license. To enable RCD:
-1. Rename `c-src/demosaic/rcd.txt` to `c-src/demosaic/rcd.c`
-2. Rebuild: `pip install -e .`
-
-By enabling RCD, you accept the GPL v3 license terms for that component. The RCD source is based on [Luis Sanz Rodríguez's implementation](https://github.com/LuisSR/RCD-Demosaicing).
+VNG and RCD are C extensions in the separate muraw-demosaic package, which you build from source. RCD is licensed under **GPL v3**, which is separate from muraw's BSD-3-Clause license, so muraw-demosaic builds it only once it is enabled; its README says how.
 
 **Core Image Rendering**: On macOS, Core Image provides native DNG rendering. Use `--use-coreimage` flag in CLI or `use_coreimage_if_available=True` in API.
 
@@ -399,5 +395,6 @@ This software is released under the **BSD 3-Clause License**. See [LICENSE](LICE
 ### Third-Party Components
 
 - **Adobe DNG SDK**: Adobe DNG SDK License (permissive, royalty-free)
-- **VNG Demosaicing**: LGPL v2.1 / CDDL v1.0
-- **RCD Demosaicing** (optional): GPL v3
+
+VNG (LGPL v2.1 / CDDL v1.0) and RCD (GPL v3) are not part of muraw; they
+are in the optional muraw-demosaic package, under their own licenses.

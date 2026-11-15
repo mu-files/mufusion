@@ -1,0 +1,4 @@
+include README.md
+recursive-include c-src *.c *.h
+exclude c-src/demosaic/rcd.c
+include c-src/demosaic/rcd.txt

@@ -71,16 +71,12 @@ jobs:
         include:
           - name: ubuntu
             os: ubuntu-latest
-            cibw_build: "cp312-manylinux_x86_64 cp313-manylinux_x86_64"
           - name: ubuntu-arm64
             os: ubuntu-24.04-arm
-            cibw_build: "cp312-manylinux_aarch64 cp313-manylinux_aarch64"
           - name: macos
             os: macos-15
-            cibw_build: "cp312-macosx_arm64 cp313-macosx_arm64"
           - name: windows
             os: windows-latest
-            cibw_build: "cp312-win_amd64 cp313-win_amd64"
           # win_arm64 waits on opencv-python-headless publishing that wheel.
           # The engine binary is in the sdist; revisit when opencv is optional.
     steps:
@@ -91,7 +87,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install build tools
-        run: pip install build cibuildwheel
+        run: pip install build
 
       # mufusion compiles nothing: one abi3 wheel per platform, holding
       # that platform's CoreEngine binary.
@@ -102,16 +98,10 @@ jobs:
           # Prebuilt CoreEngine binary requires macOS 14+
           MACOSX_DEPLOYMENT_TARGET: "14.0"
 
-      - name: Build muraw wheels
-        run: python -m cibuildwheel --output-dir ../dist
+      # muraw is pure Python: the same py3-none-any wheel on every platform.
+      - name: Build muraw wheel
+        run: python -m build --wheel --outdir ../dist
         working-directory: muraw
-        env:
-          CIBW_BUILD: ${{ matrix.cibw_build }}
-          CIBW_BUILD_VERBOSITY: 1
-          # Prebuilt libmuimg_core.*.dylib requires macOS 14+
-          CIBW_ENVIRONMENT_MACOS: MACOSX_DEPLOYMENT_TARGET=14.0
-          # Core .so is built newer than manylinux; Linux wheels are CI-only (not published).
-          CIBW_REPAIR_WHEEL_COMMAND_LINUX: ""
 
       - uses: actions/upload-artifact@v4
         with:
@@ -156,18 +146,21 @@ jobs:
           path: dist
 
       # mufusion first, so muraw's dependency on it is met by the wheel
-      # from this run rather than by a release on PyPI.
+      # from this run rather than by a release on PyPI. muraw-demosaic is
+      # not published; it is built here from the checkout, without RCD, so
+      # the VNG tests run.
       - name: Install wheels and extras
         shell: bash
         run: |
           set -euo pipefail
           mufusion_whl=$(ls dist/mufusion-*.whl | head -n 1)
-          muraw_whl=$(ls dist/muraw-*cp312*.whl | head -n 1)
+          muraw_whl=$(ls dist/muraw-*.whl | head -n 1)
           python -m pip install --upgrade pip
           echo "Installing ${mufusion_whl}"
           python -m pip install "${mufusion_whl}"
           echo "Installing ${muraw_whl}${EXTRAS}"
           python -m pip install "${muraw_whl}${EXTRAS}"
+          python -m pip install ./muraw-demosaic
         env:
           EXTRAS: ${{ matrix.extras }}
 

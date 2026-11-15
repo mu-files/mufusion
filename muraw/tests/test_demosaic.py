@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 import tifffile
-from conftest import compute_diff_stats
+from conftest import HAS_RCD, HAS_VNG, compute_diff_stats
 
 from mufusion import Array
 from muraw.dngio import DngFile
@@ -26,26 +26,17 @@ _CONSISTENCY_SIZE = 512
 _PATTERN_SIZE = 128
 
 
-def is_rcd_available():
-    """Check if RCD demosaicing is available (GPL-licensed, optional)."""
-    try:
-        # Try to use RCD on a tiny test array
-        test_cfa = np.zeros((4, 4), dtype=np.uint16)
-        demosaic(Array(test_cfa), "RGGB", algorithm=DemosaicAlgorithm.RCD).realize()
-        return True
-    except ImportError:
-        return False
-
-
 def get_available_algorithms():
-    """Get list of available demosaic algorithms, excluding RCD if not available."""
+    """The demosaic algorithms to test. VNG and RCD need the optional
+    muraw-demosaic package, and RCD needs it built with RCD enabled."""
     algorithms = [
-        DemosaicAlgorithm.VNG,
         DemosaicAlgorithm.EA,
         DemosaicAlgorithm.EA_FAST,
         DemosaicAlgorithm.OPENCV_EA,
     ]
-    if is_rcd_available():
+    if HAS_VNG:
+        algorithms.insert(0, DemosaicAlgorithm.VNG)
+    if HAS_RCD:
         algorithms.append(DemosaicAlgorithm.RCD)
     return algorithms
 

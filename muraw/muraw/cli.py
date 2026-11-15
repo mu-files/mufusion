@@ -12,7 +12,13 @@ from typing import Any
 import click
 
 from .deps import tifffile_proxy as tifffile
-from .raw_render import DemosaicAlgorithm
+from .raw_render import DemosaicAlgorithm, available_demosaic_algorithms
+
+# The --demosaic choices: VNG and RCD appear only when muraw-demosaic is
+# installed with them.
+DEMOSAIC_CHOICES = click.Choice(
+    [algorithm.value for algorithm in available_demosaic_algorithms()]
+)
 
 logger = logging.getLogger(__name__)
 
@@ -676,8 +682,8 @@ def _display_tag(
 )
 @click.option(
     "--demosaic",
-    type=str,
-    help="Demosaic CFA data using specified algorithm (EA, EA_FAST, OPENCV_EA, VNG, RCD, BILINEAR)",
+    type=DEMOSAIC_CHOICES,
+    help="Demosaic CFA data using specified algorithm",
 )
 def dng_raw_stage(input_file, output_file, stage, ifd, demosaic):
     """Extract raw image data at a specific pipeline stage.
@@ -806,9 +812,10 @@ def dng_raw_stage(input_file, output_file, stage, ifd, demosaic):
 @click.option("--demosaic", is_flag=True, help="Convert CFA to LINEAR_RAW (demosaic)")
 @click.option(
     "--demosaic-algorithm",
-    type=str,
+    type=DEMOSAIC_CHOICES,
     default="BILINEAR",
-    help="Demosaic algorithm (BILINEAR, EA, EA_FAST, OPENCV_EA, VNG, RCD)",
+    show_default=True,
+    help="Demosaic algorithm",
 )
 @click.option("--preview", is_flag=True, help="Generate preview/thumbnail")
 @click.option(
@@ -1028,9 +1035,10 @@ def dng_copy(
 )
 @click.option(
     "--demosaic-algorithm",
-    type=str,
+    type=DEMOSAIC_CHOICES,
     default="EA",
-    help="Demosaic algorithm (EA, EA_FAST, OPENCV_EA, BILINEAR, VNG, RCD)",
+    show_default=True,
+    help="Demosaic algorithm",
 )
 def dng_convert(
     input_file,

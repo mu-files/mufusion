@@ -42,6 +42,7 @@ jobs:
           pip install pyinstaller Pillow
           pip install -e ../mufusion
           pip install -e "../muraw[all]"
+          pip install ../muraw-demosaic
           pip install -e .
 
       - name: Install Linux dependencies

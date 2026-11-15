@@ -847,10 +847,12 @@ def main():
         action="store_true",
         help="Demosaic CFA to LINEAR_RAW",
     )
+    from muraw.raw_render import available_demosaic_algorithms
+
     parser.add_argument(
         "--demosaic-algorithm",
         default="BILINEAR",
-        choices=["BILINEAR", "EA", "EA_FAST", "OPENCV_EA", "VNG", "RCD"],
+        choices=[algorithm.value for algorithm in available_demosaic_algorithms()],
         help="Demosaic algorithm (default: BILINEAR)",
     )
     parser.add_argument(
