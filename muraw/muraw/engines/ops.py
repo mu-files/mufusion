@@ -1281,9 +1281,9 @@ matmul = EngineOp(
     _infer_meta=None,
 )
 
-convert_colorspace = EngineOp(
+convert_colormodel = EngineOp(
     meta=OpMeta(
-        name="convert_colorspace", requires_2d=False, is_cfa=False, is_rgb=False
+        name="convert_colormodel", requires_2d=False, is_cfa=False, is_rgb=False
     ),
     _out_dtype=graph._out_dtype_same,
     _out_channels=graph._out_channels_same,
@@ -1294,7 +1294,7 @@ convert_colorspace = EngineOp(
         json.loads(r"""[
   {
     "count": 1,
-    "key": "fromspace",
+    "key": "src_model",
     "type": "string",
     "values": [
       "RGB",
@@ -1307,7 +1307,7 @@ convert_colorspace = EngineOp(
   },
   {
     "count": 1,
-    "key": "tospace",
+    "key": "dst_model",
     "type": "string",
     "values": [
       "RGB",
@@ -1320,7 +1320,7 @@ convert_colorspace = EngineOp(
   }
 ]""")
     ),
-    _infer_meta=graph._out_meta_convert_colorspace,
+    _infer_meta=graph._out_meta_convert_colormodel,
 )
 
 rgb_matrix_3x3 = EngineOp(
@@ -2090,7 +2090,7 @@ OPS_BY_NAME = {
     "reshape": reshape,
     "cfa_demosaic": cfa_demosaic,
     "matmul": matmul,
-    "convert_colorspace": convert_colorspace,
+    "convert_colormodel": convert_colormodel,
     "rgb_matrix_3x3": rgb_matrix_3x3,
     "lut": lut,
     "convert_dtype": convert_dtype,
@@ -2131,7 +2131,7 @@ __all__ = [
     "cfa_fix_bad_pixels_constant",
     "cfa_normalize_raw",
     "composite",
-    "convert_colorspace",
+    "convert_colormodel",
     "convert_dtype",
     "cos",
     "div_scalar",

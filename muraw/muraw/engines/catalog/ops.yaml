@@ -84,7 +84,7 @@ enums:
     - bilinear
     - ea
     - ea_fast
-  color_space:
+  color_model:
     - RGB
     - GRAY
     - YUV
@@ -1231,7 +1231,7 @@ ops:
         type: i32
         count: 1
 
-  # Convert between the color spaces named by fromspace and tospace.
+  # Convert between the color models named by src_model and dst_model.
   # RGB to GRAY drops the channel axis:
   #   Y = 0.299 R + 0.587 G + 0.114 B
   # An (H, W, 3) or (3, H, W) image becomes (H, W). A stack
@@ -1242,22 +1242,22 @@ ops:
   # The result has the input's dtype. RGB to GRAY computes the sum in
   # float32. An integer result rounds to nearest, half away from zero,
   # and saturates. A float16 result is that float32 value rounded to
-  # float16. The same space is not a node: the caller returns the
+  # float16. The same model is not a node: the caller returns the
   # input. YUV, YCrCb, HSV, and HLS are named and not computed yet.
-  - name: convert_colorspace
+  - name: convert_colormodel
     inputs:
       - channels: any
     outputs:
-      - geometry: convert_colorspace
+      - geometry: convert_colormodel
     attrs:
-      - key: fromspace
+      - key: src_model
         type: string
         count: 1
-        enum: color_space
-      - key: tospace
+        enum: color_model
+      - key: dst_model
         type: string
         count: 1
-        enum: color_space
+        enum: color_model
 
   - name: rgb_matrix_3x3
     is_rgb: true

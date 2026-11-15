@@ -132,7 +132,7 @@ _OPS_WITH_OWN_PLACEMENT = {
     "hypot",
     "power",
     "arctan2",
-    "convert_colorspace",
+    "convert_colormodel",
     "logical_and",
     "logical_or",
     "logical_xor",

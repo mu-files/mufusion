@@ -907,11 +907,11 @@ def _matmul_matrix_first(matrix: np.ndarray, array: "Array") -> "Array":
     return _matmul_array_first(array, matrix.T)
 
 
-def _color_space_name(value: Any, key: str) -> str:
-    """``value`` as the ``key`` space name, or the catalog's rejection."""
+def _color_model_name(value: Any, key: str) -> str:
+    """``value`` as the ``key`` model name, or the catalog's rejection."""
     from .engines.ops import OPS_BY_NAME
 
-    specs = OPS_BY_NAME["convert_colorspace"]._attr_specs
+    specs = OPS_BY_NAME["convert_colormodel"]._attr_specs
     allowed = next(spec["values"] for spec in specs if spec["key"] == key)
     if not isinstance(value, str):
         raise TypeError(f"attr {key!r} must be a str")
@@ -920,13 +920,13 @@ def _color_space_name(value: Any, key: str) -> str:
     return value
 
 
-def convert_colorspace(image: ArrayLike, fromspace: str, tospace: str) -> "Array":
-    """Convert ``image`` from ``fromspace`` to ``tospace``.
+def convert_colormodel(src: ArrayLike, src_model: str, dst_model: str) -> "Array":
+    """Convert ``src`` from the color model ``src_model`` to ``dst_model``.
 
-    ``mi.convert_colorspace(x, "RGB", "GRAY")``. The names are ``RGB``,
+    ``mi.convert_colormodel(x, "RGB", "GRAY")``. The names are ``RGB``,
     ``GRAY``, ``YUV``, ``YCrCb``, ``HSV``, and ``HLS``. The result has
-    ``image``'s dtype. The same name on both sides returns ``image``,
-    with no node.
+    ``src``'s dtype. The same name on both sides returns ``src``, with
+    no node.
 
     RGB to gray drops the channel axis::
 
@@ -947,26 +947,26 @@ def convert_colorspace(image: ArrayLike, fromspace: str, tospace: str) -> "Array
     """
     from .engines.graph import op
 
-    src = _color_space_name(fromspace, "fromspace")
-    dst = _color_space_name(tospace, "tospace")
-    array = image if isinstance(image, Array) else Array(np.asarray(image))
-    if src == dst:
+    src_name = _color_model_name(src_model, "src_model")
+    dst_name = _color_model_name(dst_model, "dst_model")
+    array = src if isinstance(src, Array) else Array(np.asarray(src))
+    if src_name == dst_name:
         return array
     if _is_bool(array.dtype):
         raise NotImplementedError(
-            "convert_colorspace of a bool array is not supported; "
+            "convert_colormodel of a bool array is not supported; "
             "the dtypes are uint8, uint16, float16, and float32"
         )
     # The engine reads axis 0 of a 3-axis array as frames, so a
     # channels-first RGB image is moved to channels last before the node.
     if (
-        src == "RGB"
+        src_name == "RGB"
         and array.meta.ndim == 3
         and array.meta.channel_axis == 0
         and array.meta.channels == 3
     ):
         array = moveaxis(array, 0, -1)
-    return op("convert_colorspace", array, fromspace=src, tospace=dst)
+    return op("convert_colormodel", array, src_model=src_name, dst_model=dst_name)
 
 
 # The scalar op and the op between two arrays for each operator.
@@ -1753,7 +1753,7 @@ def rot90(m: ArrayLike, k: int = 1, axes: Tuple[int, int] = (0, 1)) -> "Array":
     ndim = m.meta.ndim
     if len(axes) != 2:
         raise ValueError("len(axes) must be 2.")
-    if axes[0] == axes[1] or abs(axes[0] - axes[1]) == ndim:
+    if axes[0] == axes[1] or axes[0] - axes[1] in (ndim, -ndim):
         raise ValueError("Axes must be different.")
     if not all(-ndim <= axis < ndim for axis in axes):
         raise ValueError(f"Axes={axes} out of range for array of ndim={ndim}.")

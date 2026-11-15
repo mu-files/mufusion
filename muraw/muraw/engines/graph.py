@@ -718,7 +718,7 @@ def _out_meta_broadcast(x: Array, attrs: Dict[str, Any], *more: Array) -> ArrayM
     return _meta_from_shape(shape, x.dtype, x.meta.channel_axis)
 
 
-def _convert_colorspace_channels(src: str) -> int:
+def _convert_colormodel_channels(src: str) -> int:
     """The channel count ``src`` reads. ``src`` is ``RGB`` or ``GRAY``."""
     if src == "RGB":
         return 3
@@ -732,8 +732,8 @@ def _kept_placement(meta: ArrayMeta, x: Array) -> ArrayMeta:
     )
 
 
-def _out_meta_convert_colorspace(x: Array, attrs: Dict[str, Any]) -> ArrayMeta:
-    """Geometry policy ``convert_colorspace``.
+def _out_meta_convert_colormodel(x: Array, attrs: Dict[str, Any]) -> ArrayMeta:
+    """Geometry policy ``convert_colormodel``.
 
     RGB to gray drops the channel axis: an ``(H, W, 3)`` image becomes
     ``(H, W)``, and a stack ``(N, H, W, 3)`` becomes ``(N, H, W)`` with
@@ -741,22 +741,22 @@ def _out_meta_convert_colorspace(x: Array, attrs: Dict[str, Any]) -> ArrayMeta:
     rows, columns, origin, and canvas stay. A pair other than those two
     raises ``NotImplementedError``.
     """
-    src = attrs["fromspace"]
-    dst = attrs["tospace"]
+    src = attrs["src_model"]
+    dst = attrs["dst_model"]
     if x.meta.is_1d:
         raise NotImplementedError(
-            f"convert_colorspace of shape {x.shape} is not supported; "
+            f"convert_colormodel of shape {x.shape} is not supported; "
             "pass an (H, W) image or one with a channel axis"
         )
     if (src, dst) not in (("RGB", "GRAY"), ("GRAY", "RGB")):
         raise NotImplementedError(
-            f"convert_colorspace from {src} to {dst} is not supported yet"
+            f"convert_colormodel from {src} to {dst} is not supported yet"
         )
-    need = _convert_colorspace_channels(src)
+    need = _convert_colormodel_channels(src)
     if x.meta.channels != need:
         noun = "channel" if need == 1 else "channels"
         raise NotImplementedError(
-            f"convert_colorspace from {src} reads {need} {noun}, got {x.meta.channels}"
+            f"convert_colormodel from {src} reads {need} {noun}, got {x.meta.channels}"
         )
     if src == "RGB":
         if x.meta.ndim == 4:
