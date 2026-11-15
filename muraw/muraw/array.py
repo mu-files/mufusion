@@ -412,59 +412,297 @@ def divide(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
     return _arithmetic_function(operator.truediv, x1, x2)
 
 
+def floor_divide(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
+    """NumPy's ``floor_divide``: ``x1 // x2``, the quotient toward negative
+    infinity, broadcast. The result has the inputs' dtype. An integer
+    division by zero is 0. A Python float beside an integer array is
+    float32, where NumPy gives float64."""
+    return _arithmetic_function(operator.floordiv, x1, x2)
+
+
 def sqrt(x: ArrayLike) -> "Array":
-    """NumPy's ``sqrt``. A negative float is NaN. A uint8 input gives
+    """NumPy's ``sqrt``. A negative float is NaN. A bool or uint8 input
+    gives float16, and a uint16 input gives float32."""
+    return _float_unary("sqrt", x)
+
+
+def cbrt(x: ArrayLike) -> "Array":
+    """NumPy's ``cbrt``, the cube root. A negative sample keeps its sign,
+    so ``cbrt(-8)`` is -2, and ``-0`` stays ``-0``. A bool or uint8 input
+    gives float16, and a uint16 input gives float32."""
+    return _float_unary("cbrt", x)
+
+
+def sin(x: ArrayLike) -> "Array":
+    """NumPy's ``sin``, with the angle in radians. A bool or uint8 input
+    gives float16, and a uint16 input gives float32."""
+    return _float_unary("sin", x)
+
+
+def cos(x: ArrayLike) -> "Array":
+    """NumPy's ``cos``, with the angle in radians. A bool or uint8 input
+    gives float16, and a uint16 input gives float32."""
+    return _float_unary("cos", x)
+
+
+def tan(x: ArrayLike) -> "Array":
+    """NumPy's ``tan``, with the angle in radians. A bool or uint8 input
+    gives float16, and a uint16 input gives float32."""
+    return _float_unary("tan", x)
+
+
+def arcsin(x: ArrayLike) -> "Array":
+    """NumPy's ``arcsin`` and ``asin``, in radians in ``[-pi/2, pi/2]``.
+    A sample outside ``[-1, 1]`` is NaN. A bool or uint8 input gives
     float16, and a uint16 input gives float32."""
-    if not isinstance(x, Array):
-        x = Array(np.asarray(x))
+    return _float_unary("arcsin", x)
+
+
+asin = arcsin
+
+
+def arccos(x: ArrayLike) -> "Array":
+    """NumPy's ``arccos`` and ``acos``, in radians in ``[0, pi]``. A
+    sample outside ``[-1, 1]`` is NaN. A bool or uint8 input gives
+    float16, and a uint16 input gives float32."""
+    return _float_unary("arccos", x)
+
+
+acos = arccos
+
+
+def arctan(x: ArrayLike) -> "Array":
+    """NumPy's ``arctan`` and ``atan``, in radians in ``[-pi/2, pi/2]``.
+    A bool or uint8 input gives float16, and a uint16 input gives float32."""
+    return _float_unary("arctan", x)
+
+
+atan = arctan
+
+
+def exp(x: ArrayLike) -> "Array":
+    """NumPy's ``exp``. ``+inf`` gives inf, ``-inf`` gives 0, and a NaN
+    stays NaN. A bool or uint8 input gives float16, and a uint16 input
+    gives float32."""
+    return _float_unary("exp", x)
+
+
+def exp2(x: ArrayLike) -> "Array":
+    """NumPy's ``exp2``. An integer sample is that power of two, until it
+    overflows. A bool or uint8 input gives float16, and a uint16 input
+    gives float32."""
+    return _float_unary("exp2", x)
+
+
+def expm1(x: ArrayLike) -> "Array":
+    """NumPy's ``expm1``: ``exp(x) - 1``, accurate for a small ``x``.
+    ``-inf`` gives -1. A bool or uint8 input gives float16, and a uint16
+    input gives float32."""
+    return _float_unary("expm1", x)
+
+
+def log(x: ArrayLike) -> "Array":
+    """NumPy's ``log``, the natural logarithm. A negative sample is NaN,
+    and 0 gives ``-inf``. A bool or uint8 input gives float16, and a
+    uint16 input gives float32."""
+    return _float_unary("log", x)
+
+
+def log2(x: ArrayLike) -> "Array":
+    """NumPy's ``log2``. A positive power of two is that integer. A
+    negative sample is NaN, and 0 gives ``-inf``. A bool or uint8 input
+    gives float16, and a uint16 input gives float32."""
+    return _float_unary("log2", x)
+
+
+def log10(x: ArrayLike) -> "Array":
+    """NumPy's ``log10``. A negative sample is NaN, and 0 gives ``-inf``.
+    A bool or uint8 input gives float16, and a uint16 input gives
+    float32."""
+    return _float_unary("log10", x)
+
+
+def log1p(x: ArrayLike) -> "Array":
+    """NumPy's ``log1p``: ``log(1 + x)``, accurate for a small ``x``.
+    ``-1`` gives ``-inf``, and a sample below ``-1`` is NaN. A bool or
+    uint8 input gives float16, and a uint16 input gives float32."""
+    return _float_unary("log1p", x)
+
+
+def arctan2(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
+    """NumPy's ``arctan2`` and ``atan2``: the signed angle in radians, in
+    ``[-pi, pi]``, from the positive x-axis to ``(x2, x1)``, broadcast. A
+    bool or uint8 pair gives float16, and a uint16 pair gives float32. A
+    Python ``float`` beside an integer gives float32, where NumPy gives
+    float64.
+    """
     from .engines.graph import op
 
-    return op("sqrt", x)
+    dtype = _arctan2_dtype(x1, x2)
+    d1 = None if type(x1) in (int, float, bool) else _operand_dtype(x1, None)
+    d2 = None if type(x2) in (int, float, bool) else _operand_dtype(x2, None)
+    stored = d1 if d1 is not None and d1 == d2 and d1.kind in ("u", "b") else dtype
+    first, second = _broadcast_pair(
+        "arctan2", _operand_array(x1, stored), _operand_array(x2, stored)
+    )
+    return op("arctan2", first, second)
+
+
+atan2 = arctan2
 
 
 def ceil(x: ArrayLike) -> "Array":
     """NumPy's ``ceil``. Each sample rounds toward positive infinity. The
-    result has ``x``'s dtype. An integer array is returned unchanged."""
-    if not isinstance(x, Array):
-        x = Array(np.asarray(x))
-    if x.dtype.kind != "f":
-        return x
-    from .engines.graph import op
-
-    return op("ceil", x)
+    result has ``x``'s dtype. A bool or integer array is returned unchanged."""
+    return _copy_integral_unary("ceil", x)
 
 
 def floor(x: ArrayLike) -> "Array":
     """NumPy's ``floor``. Each sample rounds toward negative infinity. The
-    result has ``x``'s dtype. An integer array is returned unchanged."""
+    result has ``x``'s dtype. A bool or integer array is returned unchanged."""
+    return _copy_integral_unary("floor", x)
+
+
+def trunc(x: ArrayLike) -> "Array":
+    """NumPy's ``trunc``. Each sample rounds toward zero. The result has
+    ``x``'s dtype. A bool or integer array is returned unchanged, and
+    ``trunc(-0)`` stays ``-0``."""
+    return _copy_integral_unary("trunc", x)
+
+
+def abs(x: ArrayLike) -> "Array":
+    """NumPy's ``abs``. The result has ``x``'s dtype. A bool or integer
+    array is returned unchanged. ``-0`` becomes ``+0``, and a NaN stays
+    a NaN."""
+    return _copy_integral_unary("abs", x)
+
+
+absolute = abs
+
+
+def negative(x: ArrayLike) -> "Array":
+    """NumPy's ``negative``, the unary ``-``. The result has ``x``'s dtype.
+    ``+0`` becomes ``-0`` and ``-0`` becomes ``+0``. A uint8 or uint16
+    result saturates, so every sample is 0, where NumPy wraps. A bool
+    raises ``TypeError``."""
     if not isinstance(x, Array):
         x = Array(np.asarray(x))
-    if x.dtype.kind != "f":
-        return x
+    if _is_bool(x.dtype):
+        raise TypeError(
+            "boolean negative, the `-` operator, is not supported, use "
+            "the `~` operator or the logical_not function instead"
+        )
     from .engines.graph import op
 
-    return op("floor", x)
+    return op("negative", x)
+
+
+def minimum(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
+    """NumPy's ``minimum``, broadcast. The result has the inputs' dtype.
+    A NaN on either side gives NaN, and the minimum of ``+0`` and ``-0``
+    is ``-0``. NumPy's float16 result returns the first zero instead. A Python float beside an integer array is float32, where
+    NumPy gives float64. A Python integer that does not fit an unsigned
+    array raises ``OverflowError``."""
+    return _arithmetic_function(_minimum, x1, x2)
+
+
+def maximum(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
+    """NumPy's ``maximum``, broadcast. The result has the inputs' dtype.
+    A NaN on either side gives NaN, and the maximum of ``+0`` and ``-0``
+    is ``+0``. NumPy's float16 result returns the first zero instead. A Python float beside an integer array is float32, where
+    NumPy gives float64. A Python integer that does not fit an unsigned
+    array raises ``OverflowError``."""
+    return _arithmetic_function(_maximum, x1, x2)
+
+
+def _minimum(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
+    if isinstance(x1, Array):
+        return x1._scalar_op("minimum_scalar", x2)
+    return x2._scalar_op("minimum_scalar", x1)
+
+
+def _maximum(x1: ArithmeticOperand, x2: ArithmeticOperand) -> "Array":
+    if isinstance(x1, Array):
+        return x1._scalar_op("maximum_scalar", x2)
+    return x2._scalar_op("maximum_scalar", x1)
+
+
+_MISSING = object()
+
+
+def clip(
+    x: ArrayLike,
+    a_min: Any = _MISSING,
+    a_max: Any = _MISSING,
+    out: Any = None,
+    *,
+    min: Any = _MISSING,
+    max: Any = _MISSING,
+) -> "Array":
+    """NumPy's ``clip``. Values below ``a_min`` become ``a_min``, and
+    values above ``a_max`` become ``a_max``. ``None`` skips that edge.
+    When ``a_min`` is greater than ``a_max``, the result is ``a_max``.
+
+    A Python integer at or outside an unsigned dtype's range is no bound
+    on that edge, as NumPy does. A Python float beside an integer array
+    is float32, where NumPy gives float64. ``out`` is not supported;
+    ``realize(out=)`` writes the result. A lower bound of ``+0`` turns
+    ``-0`` into ``+0``, where NumPy's clip keeps ``-0``, because the
+    result is ``maximum`` then ``minimum``.
+    """
+    if out is not None:
+        raise NotImplementedError(
+            "clip out= is not supported; realize(out=) writes the result"
+        )
+    if a_min is _MISSING and a_max is _MISSING:
+        a_min = None if min is _MISSING else min
+        a_max = None if max is _MISSING else max
+    elif a_min is _MISSING:
+        raise TypeError("clip() missing 1 required positional argument: 'a_min'")
+    elif a_max is _MISSING:
+        raise TypeError("clip() missing 1 required positional argument: 'a_max'")
+    elif min is not _MISSING or max is not _MISSING:
+        raise ValueError(
+            "Passing `min` or `max` keyword argument when "
+            "`a_min` and `a_max` are provided is forbidden."
+        )
+    if not isinstance(x, Array):
+        x = Array(np.asarray(x))
+    if _is_integer(x.dtype):
+        info = np.iinfo(x.dtype)
+        if type(a_min) is int and a_min <= int(info.min):
+            a_min = None
+        if type(a_max) is int and a_max >= int(info.max):
+            a_max = None
+    if a_min is None and a_max is None:
+        return x
+    if a_min is not None:
+        x = maximum(x, a_min)
+    if a_max is not None:
+        x = minimum(x, a_max)
+    return x
 
 
 def rint(x: ArrayLike) -> "Array":
     """NumPy's ``rint``. Each sample rounds to the nearest integer, and a
-    half rounds to the even integer. A float keeps its dtype. A uint8
-    input gives float16, and a uint16 input gives float32."""
-    if not isinstance(x, Array):
-        x = Array(np.asarray(x))
-    from .engines.graph import op
-
-    return op("rint", x)
+    half rounds to the even integer. A float keeps its dtype. A bool or
+    uint8 input gives float16, and a uint16 input gives float32."""
+    return _float_unary("rint", x)
 
 
 def round(x: ArrayLike, decimals: int = 0) -> "Array":
     """NumPy's ``round``. ``decimals`` is how many digits to keep after
     the decimal point, or to the left of it when negative. A half rounds
-    to the even integer. The result has ``x``'s dtype. An integer array
-    with a non-negative ``decimals`` is returned unchanged."""
+    to the even integer. The result has ``x``'s dtype, except a bool input
+    at ``decimals=0``, which gives float16. An integer array with a
+    non-negative ``decimals`` is returned unchanged."""
     decimals = operator.index(decimals)
     if not isinstance(x, Array):
         x = Array(np.asarray(x))
+    if _is_bool(x.dtype):
+        if decimals == 0:
+            return rint(x)
+        np.round(np.empty(0, np.bool_), decimals=decimals)
     if x.dtype.kind != "f" and decimals >= 0:
         return x
     if decimals == 0:
@@ -669,12 +907,77 @@ def _matmul_matrix_first(matrix: np.ndarray, array: "Array") -> "Array":
     return _matmul_array_first(array, matrix.T)
 
 
+def _color_space_name(value: Any, key: str) -> str:
+    """``value`` as the ``key`` space name, or the catalog's rejection."""
+    from .engines.ops import OPS_BY_NAME
+
+    specs = OPS_BY_NAME["convert_colorspace"]._attr_specs
+    allowed = next(spec["values"] for spec in specs if spec["key"] == key)
+    if not isinstance(value, str):
+        raise TypeError(f"attr {key!r} must be a str")
+    if value not in allowed:
+        raise ValueError(f"attr {key!r} must be one of {list(allowed)}, got {value!r}")
+    return value
+
+
+def convert_colorspace(image: ArrayLike, fromspace: str, tospace: str) -> "Array":
+    """Convert ``image`` from ``fromspace`` to ``tospace``.
+
+    ``mi.convert_colorspace(x, "RGB", "GRAY")``. The names are ``RGB``,
+    ``GRAY``, ``YUV``, ``YCrCb``, ``HSV``, and ``HLS``. The result has
+    ``image``'s dtype. The same name on both sides returns ``image``,
+    with no node.
+
+    RGB to gray drops the channel axis::
+
+        Y = 0.299 R + 0.587 G + 0.114 B
+
+    An ``(H, W, 3)`` or ``(3, H, W)`` image becomes ``(H, W)``, and a
+    stack ``(N, H, W, 3)`` becomes ``(N, H, W)``. Gray to RGB writes
+    that channel into R, G, and B, so an ``(H, W)`` image becomes
+    ``(H, W, 3)``. It is not an inverse of the weights. ``(H, W, 1)``
+    and ``(1, H, W)`` are the same gray input.
+
+    The sum is computed in float32. An integer result rounds to nearest,
+    half away from zero, and saturates. A float16 result is that float32
+    value rounded to float16. ``uint8``, ``uint16``, ``float16``, and
+    ``float32`` run. A bool raises ``NotImplementedError``.
+
+    YUV, YCrCb, HSV, and HLS are named and not computed yet.
+    """
+    from .engines.graph import op
+
+    src = _color_space_name(fromspace, "fromspace")
+    dst = _color_space_name(tospace, "tospace")
+    array = image if isinstance(image, Array) else Array(np.asarray(image))
+    if src == dst:
+        return array
+    if _is_bool(array.dtype):
+        raise NotImplementedError(
+            "convert_colorspace of a bool array is not supported; "
+            "the dtypes are uint8, uint16, float16, and float32"
+        )
+    # The engine reads axis 0 of a 3-axis array as frames, so a
+    # channels-first RGB image is moved to channels last before the node.
+    if (
+        src == "RGB"
+        and array.meta.ndim == 3
+        and array.meta.channel_axis == 0
+        and array.meta.channels == 3
+    ):
+        array = moveaxis(array, 0, -1)
+    return op("convert_colorspace", array, fromspace=src, tospace=dst)
+
+
 # The scalar op and the op between two arrays for each operator.
 _ELEMENTWISE_OPS = {
     "add_scalar": "add",
     "sub_scalar": "subtract",
     "mul_scalar": "multiply",
     "div_scalar": "divide",
+    "floor_div_scalar": "floor_divide",
+    "minimum_scalar": "minimum",
+    "maximum_scalar": "maximum",
 }
 
 
@@ -772,6 +1075,51 @@ def _operand_array(value: Any, dtype: np.dtype) -> "Array":
     return _logical_operand(value).astype(dtype)
 
 
+def _float_unary(name: str, x: ArrayLike) -> "Array":
+    from .engines.graph import op
+
+    if not isinstance(x, Array):
+        x = Array(np.asarray(x))
+    return op(name, x)
+
+
+def _copy_integral_unary(name: str, x: ArrayLike) -> "Array":
+    """``name`` of ``x``. A bool or integer array is returned unchanged."""
+    from .engines.graph import op
+
+    if not isinstance(x, Array):
+        x = Array(np.asarray(x))
+    if x.dtype.kind != "f":
+        return x
+    return op(name, x)
+
+
+def _arctan2_dtype(x1: Any, x2: Any) -> np.dtype:
+    """The float dtype ``arctan2(x1, x2)`` stores. A Python ``float``
+    beside an integer is float32, where NumPy gives float64."""
+
+    def _probe(value: Any) -> Any:
+        if isinstance(value, Array):
+            return np.empty(0, value.dtype)
+        if type(value) in (int, float, bool):
+            return value
+        return np.empty(0, np.asarray(value).dtype)
+
+    if type(x1) is int and type(x2) is int:
+        dtype = np.dtype(np.float64)
+    else:
+        with np.errstate(all="ignore"):
+            dtype = np.asarray(np.arctan2(_probe(x1), _probe(x2))).dtype
+    if dtype == np.float64 and float in (type(x1), type(x2)):
+        dtype = np.dtype(np.float32)
+    if dtype not in (np.dtype(np.float16), np.dtype(np.float32)):
+        raise NotImplementedError(
+            f"arctan2 result dtype {dtype.name} is not supported; "
+            "muimage stores float16 and float32"
+        )
+    return dtype
+
+
 def _bitwise_binary(name: str, ufunc: Any, x1: Any, x2: Any) -> "Array":
     """``name`` of ``x1`` and ``x2`` when the result is bool, uint8, or uint16.
 
@@ -843,9 +1191,9 @@ def _logical_binary(name: str, x1: Any, x2: Any) -> "Array":
 def _bool_arithmetic(array: "Array", name: str, other: Any, reverse: bool) -> "Array":
     """A bool and a numeric operand, promoted to that number's dtype.
 
-    ``-`` of two bools raises ``TypeError``. ``+`` of two bools is
-    ``logical_or`` and ``*`` is ``logical_and``. A result dtype an Array
-    does not store is ``NotImplementedError``.
+    ``-`` of two bools raises ``TypeError``. ``+`` and ``maximum`` of two
+    bools are ``logical_or``. ``*`` and ``minimum`` are ``logical_and``.
+    A result dtype an Array does not store is ``NotImplementedError``.
     """
     other_is_bool = _operand_is_bool(other)
     self_is_bool = _is_bool(array.dtype)
@@ -861,6 +1209,10 @@ def _bool_arithmetic(array: "Array", name: str, other: Any, reverse: bool) -> "A
             return _logical_binary("logical_or", left, right)
         if name == "mul_scalar":
             return _logical_binary("logical_and", left, right)
+        if name == "minimum_scalar":
+            return _logical_binary("logical_and", left, right)
+        if name == "maximum_scalar":
+            return _logical_binary("logical_or", left, right)
         raise NotImplementedError(f"{name} of two bools is not supported")
     if self_is_bool:
         result = np.result_type(array.dtype, np.asarray(other).dtype)
@@ -936,6 +1288,10 @@ def _elementwise(name: str, first: "Array", second: "Array") -> "Array":
             return _graph_op("logical_or", first, second)
         if name == "multiply":
             return _graph_op("logical_and", first, second)
+        if name == "minimum":
+            return _graph_op("logical_and", first, second)
+        if name == "maximum":
+            return _graph_op("logical_or", first, second)
         raise NotImplementedError(f"{name} of two bools is not supported")
     dtype = supported_dtype(np.result_type(first.dtype, second.dtype))
     return _graph_op(name, first.astype(dtype), second.astype(dtype))
@@ -3041,8 +3397,9 @@ class Array:
 
         A constant keeps an integer array's dtype when its values are
         integers. A float constant makes an integer array float32. ``/``
-        reads an integer array as it is and writes float32. Integer results
-        saturate instead of wrapping.
+        reads an integer array as it is and writes float32. ``//`` of an
+        unsigned array rejects an integer that does not fit that dtype.
+        Integer results saturate instead of wrapping.
         """
         if _is_bool(self.dtype) or _operand_is_bool(other):
             return _bool_arithmetic(self, name, other, reverse)
@@ -3057,6 +3414,33 @@ class Array:
             dtype = self.dtype
             if _is_integer(dtype) and const.dtype.kind == "f":
                 dtype = np.dtype(np.float32)
+            elif (
+                name in ("minimum_scalar", "maximum_scalar")
+                and _is_integer(dtype)
+                and const.dtype.kind in "iu"
+            ):
+                if type(other) is int:
+                    info = np.iinfo(self.dtype)
+                    if other < int(info.min) or other > int(info.max):
+                        raise OverflowError(
+                            f"Python integer {other} out of bounds for {self.dtype.name}"
+                        )
+                else:
+                    promoted = np.result_type(self.dtype, const.dtype)
+                    if promoted != self.dtype:
+                        dtype = supported_dtype(promoted)
+            if (
+                name == "floor_div_scalar"
+                and _is_integer(self.dtype)
+                and const.dtype.kind in "iu"
+            ):
+                limit = int(np.iinfo(self.dtype).max)
+                for value in np.asarray(const).reshape(-1):
+                    as_int = int(value)
+                    if as_int < 0 or as_int > limit:
+                        raise OverflowError(
+                            f"Python integer {as_int} out of bounds for {self.dtype.name}"
+                        )
             scalar = _scalar_values(self._meta, const)
             if scalar is not None:
                 values, per_frame = scalar
@@ -3078,12 +3462,7 @@ class Array:
         return _elementwise(_ELEMENTWISE_OPS[name], first, second)
 
     def __neg__(self) -> "Array":
-        if _is_bool(self.dtype):
-            raise TypeError(
-                "boolean negative, the `-` operator, is not supported, use "
-                "the `~` operator or the logical_not function instead"
-            )
-        return NotImplemented
+        return negative(self)
 
     def __add__(self, other: ArithmeticOperand) -> "Array":
         return self._scalar_op("add_scalar", other)
@@ -3108,6 +3487,12 @@ class Array:
 
     def __rtruediv__(self, other: ArithmeticOperand) -> "Array":
         return self._scalar_op("div_scalar", other, reverse=True)
+
+    def __floordiv__(self, other: ArithmeticOperand) -> "Array":
+        return self._scalar_op("floor_div_scalar", other)
+
+    def __rfloordiv__(self, other: ArithmeticOperand) -> "Array":
+        return self._scalar_op("floor_div_scalar", other, reverse=True)
 
     def __matmul__(self, other: ArrayLike | Sequence[Any]) -> "Array":
         return matmul(self, other)
