@@ -6,9 +6,9 @@ __pycache__/
 # C extensions
 *.so
 # Ship prebuilt abi3 CoreEngine extensions from private CI
-!muraw/muraw/engines/core/_binaries/*.so
+!mufusion/mufusion/_engines/core/_binaries/*.so
 # *.py[cod] also matches *.pyd — allow Windows abi3 artifacts
-!muraw/muraw/engines/core/_binaries/*.pyd
+!mufusion/mufusion/_engines/core/_binaries/*.pyd
 
 # Distribution / packaging
 .Python
