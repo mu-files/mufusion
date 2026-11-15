@@ -46,19 +46,20 @@ jobs:
         run: |
           set -o pipefail
           for project in mufusion muraw; do
-            (cd "$project" && python -m build --sdist 2>&1 | tee "$RUNNER_TEMP/sdist-$project.log")
+            (cd "$project" && python -m build --sdist --outdir ../dist 2>&1 | tee "$RUNNER_TEMP/sdist-$project.log")
             if grep -q BuildBackendWarning "$RUNNER_TEMP/sdist-$project.log"; then
               echo "The $project sdist build printed a BuildBackendWarning." >&2
               exit 1
             fi
           done
 
+      # Both projects build into one dist/ at the repo root. An artifact of
+      # two directories keeps their paths, and the jobs that download it
+      # read the files at the top of dist/.
       - uses: actions/upload-artifact@v4
         with:
           name: sdist
-          path: |
-            mufusion/dist/*.tar.gz
-            muraw/dist/*.tar.gz
+          path: dist/*.tar.gz
 
   build-wheels:
     name: Build wheels (${{ matrix.name }})
@@ -94,14 +95,14 @@ jobs:
       # mufusion compiles nothing: one abi3 wheel per platform, holding
       # that platform's CoreEngine binary.
       - name: Build mufusion wheel
-        run: python -m build --wheel --outdir dist
+        run: python -m build --wheel --outdir ../dist
         working-directory: mufusion
         env:
           # Prebuilt CoreEngine binary requires macOS 14+
           MACOSX_DEPLOYMENT_TARGET: "14.0"
 
       - name: Build muraw wheels
-        run: python -m cibuildwheel --output-dir dist
+        run: python -m cibuildwheel --output-dir ../dist
         working-directory: muraw
         env:
           CIBW_BUILD: ${{ matrix.cibw_build }}
@@ -114,9 +115,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.name }}
-          path: |
-            mufusion/dist/*.whl
-            muraw/dist/*.whl
+          path: dist/*.whl
 
   test:
     name: Test (${{ matrix.name }})
