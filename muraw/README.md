@@ -86,7 +86,13 @@ cd mufusion/muraw
 pip install -e ../mufusion -e .
 ```
 
-**Note**: muraw is pure Python and compiles nothing. The `VNG` and `RCD` demosaic algorithms are C extensions in the separate [muraw-demosaic](../muraw-demosaic) package, which is built from source and is not on PyPI. Install it only to use those two algorithms: `pip install ./muraw-demosaic` from the checkout.
+**Note**: muraw is pure Python and compiles nothing. The `VNG` and `RCD` demosaic algorithms are C extensions in the separate [muraw-demosaic](https://github.com/mu-files/mufusion/tree/main/muraw-demosaic) package, which is built from source and is not on PyPI. Install it only to use those two algorithms, into the same environment as muraw. It needs a C compiler. For VNG:
+
+```bash
+pip install "muraw-demosaic @ git+https://github.com/mu-files/mufusion.git#subdirectory=muraw-demosaic"
+```
+
+From a clone of the repository, `pip install ./muraw-demosaic` does the same. RCD needs a source edit before that install; see the [muraw-demosaic README](https://github.com/mu-files/mufusion/tree/main/muraw-demosaic#enabling-rcd).
 
 ## API Overview
 
@@ -178,8 +184,8 @@ muraw dng raw-stage input.dng output.tif raw
 # Extract after OpcodeList2
 muraw dng raw-stage input.dng output.tif linearized-plus-ops
 
-# Extract demosaiced camera RGB
-muraw dng raw-stage input.dng output.tif camera-rgb --demosaic VNG
+# Extract demosaiced camera RGB (VNG and RCD are choices only with muraw-demosaic)
+muraw dng raw-stage input.dng output.tif camera-rgb --demosaic EA
 
 # Extract from specific IFD
 muraw dng raw-stage input.dng output.tif linearized --ifd subifd2
@@ -378,11 +384,11 @@ The following DNG features are not yet implemented:
 
 **Demosaicing Algorithms**: muraw includes several demosaicing algorithms with different quality/speed tradeoffs:
 - **BILINEAR**: Good quality, fast (default for most operations)
-- **VNG** (needs [muraw-demosaic](../muraw-demosaic)): High quality, slower
+- **VNG** (needs [muraw-demosaic](https://github.com/mu-files/mufusion/tree/main/muraw-demosaic)): High quality, slower
 - **EA**: Hamilton–Adams (default for convert / camera RGB)
 - **EA_FAST**: Single-pass axis-pick green + bilinear chroma; faster, lower quality
 - **OPENCV_EA**: OpenCV edge-aware demosaic (comparison / visualization only)
-- **RCD** (needs [muraw-demosaic](../muraw-demosaic) built with RCD, GPL-licensed): High quality, slower
+- **RCD** (needs [muraw-demosaic](https://github.com/mu-files/mufusion/tree/main/muraw-demosaic) built with RCD, GPL-licensed): High quality, slower
 
 VNG and RCD are C extensions in the separate muraw-demosaic package, which you build from source. RCD is licensed under **GPL v3**, which is separate from muraw's BSD-3-Clause license, so muraw-demosaic builds it only once it is enabled; its README says how.
 
