@@ -12,9 +12,10 @@ description = "VNG and RCD demosaicing for muraw, built from source"
 authors = [{name = "mu-files", email = "info@mu-files.com"}]
 readme = "README.md"
 requires-python = ">=3.12"
-# The Python wrapper is BSD-3-Clause; VNG is LGPL v2.1 / CDDL v1.0, and
-# RCD, when enabled, is GPL v3. See README.md.
-license = "BSD-3-Clause AND (LGPL-2.1-only OR CDDL-1.0)"
+# The Python package is BSD-3-Clause and VNG is CDDL-1.0. RCD, which is
+# built only when it is enabled, is GPL-3.0-or-later. See LICENSE.
+license = "BSD-3-Clause AND CDDL-1.0"
+license-files = ["LICENSE", "LICENSES/*"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",

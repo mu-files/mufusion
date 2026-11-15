@@ -39,8 +39,11 @@ RCD source is based on
 
 ## License
 
-The Python wrapper is released under the BSD 3-Clause License.
+The Python package is released under the BSD 3-Clause License.
 
-- **VNG Demosaicing**: LGPL v2.1 / CDDL v1.0, from
-  [LibRaw](https://github.com/LibRaw/LibRaw)
+- **VNG Demosaicing**: CDDL 1.0, from
+  [LibRaw](https://github.com/LibRaw/LibRaw), which offers it under LGPL v2.1
+  or CDDL 1.0
 - **RCD Demosaicing** (optional): GPL v3
+
+See [LICENSE](LICENSE) and the full texts in [LICENSES](LICENSES).

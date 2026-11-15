@@ -97,6 +97,10 @@ jobs:
             --onedir \
             --add-data "web:web" \
             --add-data "assets:assets" \
+            --add-data "LICENSE:." \
+            --add-data "THIRD_PARTY_NOTICES.md:." \
+            --add-data "../muraw-demosaic/LICENSES/LICENSE-CDDL-1.0:licenses" \
+            --add-data "../mufusion/LICENSES/LICENSE-ARM-OPTIMIZED-ROUTINES:licenses" \
             --icon "assets/icon.png" \
             --osx-bundle-identifier "com.mufiles.mu-dng-converter" \
             --additional-hooks-dir=. \
@@ -132,6 +136,9 @@ jobs:
             --onedir \
             --add-data "web;web" \
             --add-data "assets;assets" \
+            --add-data "LICENSE;." \
+            --add-data "THIRD_PARTY_NOTICES.md;." \
+            --add-data "../muraw-demosaic/LICENSES/LICENSE-CDDL-1.0;licenses" \
             --icon "assets/icon.png" \
             --additional-hooks-dir=. \
             main.py
@@ -171,6 +178,10 @@ jobs:
             --onedir \
             --add-data "web:web" \
             --add-data "assets:assets" \
+            --add-data "LICENSE:." \
+            --add-data "THIRD_PARTY_NOTICES.md:." \
+            --add-data "../muraw-demosaic/LICENSES/LICENSE-CDDL-1.0:licenses" \
+            --add-data "../mufusion/LICENSES/LICENSE-ARM-OPTIMIZED-ROUTINES:licenses" \
             --additional-hooks-dir=. \
             main.py
         env:

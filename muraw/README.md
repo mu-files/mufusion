@@ -398,9 +398,5 @@ VNG and RCD are C extensions in the separate muraw-demosaic package, which you b
 
 This software is released under the **BSD 3-Clause License**. See [LICENSE](LICENSE) for full terms.
 
-### Third-Party Components
-
-- **Adobe DNG SDK**: Adobe DNG SDK License (permissive, royalty-free)
-
-VNG (LGPL v2.1 / CDDL v1.0) and RCD (GPL v3) are not part of muraw; they
-are in the optional muraw-demosaic package, under their own licenses.
+VNG (CDDL 1.0) and RCD (GPL v3) are not part of muraw; they are in the
+optional muraw-demosaic package, under their own licenses.

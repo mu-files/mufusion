@@ -7,8 +7,10 @@
  * Copyright (C) 2008-2024 LibRaw LLC (info@libraw.org)
  * Copyright (C) 1997-2018 Dave Coffin
  * 
- * Licensed under LGPL v2.1 and CDDL v1.0 (dual license)
- * See: https://github.com/LibRaw/LibRaw/blob/master/LICENSE.LGPL
+ * LibRaw licenses this code under LGPL v2.1 or CDDL v1.0, at the
+ * recipient's choice. This file, with the modifications below, is
+ * distributed under the Common Development and Distribution License 1.0;
+ * see LICENSES/LICENSE-CDDL-1.0.
  * 
  * Modifications from original:
  * - Added Python/NumPy C API bindings for use as Python extension

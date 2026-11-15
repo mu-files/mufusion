@@ -13,8 +13,9 @@ description = "A lazy, fused image compute graph with a NumPy interface"
 authors = [{name = "mu-files", email = "info@mu-files.com"}]
 readme = "README.md"
 requires-python = ">=3.12"
-license = "BSD-3-Clause"
-license-files = ["LICENSE"]
+# The AArch64 engine binaries contain Arm Optimized Routines, used under MIT.
+license = "BSD-3-Clause AND MIT"
+license-files = ["LICENSE", "LICENSES/*"]
 keywords = [
     "numpy", "image-processing", "compute-graph", "lazy-evaluation",
     "operator-fusion", "raw-image", "dng",

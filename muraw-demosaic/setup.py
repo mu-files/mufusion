@@ -44,7 +44,7 @@ else:
         "-flto",
     ]
 
-# VNG demosaic extension (LGPL v2.1 / CDDL v1.0)
+# VNG demosaic extension (CDDL 1.0)
 vng_extension = Extension(
     "muraw_demosaic._vng",
     sources=["c-src/demosaic/vng.c"],

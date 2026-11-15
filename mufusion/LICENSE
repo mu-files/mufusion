@@ -30,16 +30,13 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Third-Party Components
 
-This software includes components under different licenses:
+The engine binaries in mufusion/_engines/core/_binaries/ are released under
+the BSD 3-Clause License above. The AArch64 builds (macOS arm64 and Linux
+aarch64) also contain:
 
-- **Adobe DNG SDK** (c-src/raw_render/): Adobe DNG SDK License (permissive, royalty-free)
-  Copyright 2006-2024 Adobe Systems Incorporated
+- **Arm Optimized Routines** (math routines, statically linked):
+  MIT OR Apache-2.0 WITH LLVM-exception, used under the MIT License
+  Copyright (c) 1999-2022, Arm Limited
+  https://github.com/ARM-software/optimized-routines
 
-- **VNG Demosaicing** (c-src/demosaic/vng.c): LGPL v2.1 / CDDL v1.0
-  Copyright Dave Coffin, LibRaw LLC
-
-The RCD demosaicing algorithm (GPL v3) is available as optional source code
-(rcd.txt) but is not built or distributed by default. Users who choose to
-enable it must accept its GPL v3 license terms.
-
-See the LICENSES directory for full license texts and details.
+See LICENSES/LICENSE-ARM-OPTIMIZED-ROUTINES for the full license text.
