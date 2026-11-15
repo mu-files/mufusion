@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=64.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mu-rasppi"
+version = "0.1.0"
+description = "Raspberry Pi camera benchmarks and utilities"
+authors = [{name = "mu-files", email = "info@mu-files.com"}]
+license = {text = "BSD-3-Clause"}
+requires-python = ">=3.12"
+dependencies = [
+    "numpy",
+    "muraw",
+]
+
+[project.optional-dependencies]
+zwo = ["zwoasi"]
+pi = [
+    "picamera2",
+    "pidng @ git+https://github.com/schoolpost/PiDNG.git",
+]
+
+[tool.setuptools]
+py-modules = ["picamera2_capture", "zwo_capture"]
