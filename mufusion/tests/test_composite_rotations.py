@@ -46,7 +46,7 @@ def _numpy(src):
     return image
 
 
-def _muimage(src):
+def _mufusion(src):
     side = src.shape[0]
     image = mu.Array(src)
     base = mu.zeros((side * 2, side * 2, 3), dtype=np.uint8)
@@ -61,18 +61,18 @@ def test_four_rotations_composite_into_quadrants():
     """The four quadrants match NumPy. The engine timing is printed."""
     src = _marked_square()
     expected = _numpy(src)
-    np.testing.assert_array_equal(_muimage(src), expected)
+    np.testing.assert_array_equal(_mufusion(src), expected)
 
-    _muimage(src)
+    _mufusion(src)
     _numpy(src)
     set_engine_timing(EngineTiming.OPS)
     try:
         with PerfTimer("numpy") as numpy_timer:
             with numpy_timer.start_step("quadrants"):
                 _numpy(src)
-        with PerfTimer("mufusion") as muimage_timer:
-            _muimage(src)
+        with PerfTimer("mufusion") as mufusion_timer:
+            _mufusion(src)
     finally:
         set_engine_timing(EngineTiming.OFF)
     print(numpy_timer.get_report())
-    print(muimage_timer.get_report())
+    print(mufusion_timer.get_report())

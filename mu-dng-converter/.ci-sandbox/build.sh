@@ -1,5 +1,5 @@
 #!/bin/bash
-# Local CI sandbox - clones repo and runs exact commands from build.yml
+# Local CI sandbox - clones repo and runs exact commands from desktop-app.yml
 # Usage: ./build.sh [branch]
 #   branch: optional, defaults to "main" (use "dev-branch" for dev)
 set -e
@@ -14,10 +14,10 @@ echo "=== Cleaning previous build ==="
 rm -rf "$REPO_DIR"
 
 # Clone fresh copy from GitHub (like actions/checkout@v4)
-echo "=== Cloning mu-image from GitHub (branch: $BRANCH) ==="
-git clone --depth 1 --branch "$BRANCH" https://github.com/mu-files/mu-image.git "$REPO_DIR"
+echo "=== Cloning mufusion from GitHub (branch: $BRANCH) ==="
+git clone --depth 1 --branch "$BRANCH" https://github.com/mu-files/mufusion.git "$REPO_DIR"
 
-WORKFLOW="$REPO_DIR/.github/workflows/build.yml"
+WORKFLOW="$REPO_DIR/.github/workflows/desktop-app.yml"
 PROJECT_DIR="$REPO_DIR/mu-dng-converter"
 
 # Ensure yq is installed
@@ -33,16 +33,16 @@ if [ ! -d "$VENV_DIR" ]; then
 fi
 source "$VENV_DIR/bin/activate"
 
-# Extract and run steps from build.yml
+# Extract and run steps from desktop-app.yml
 cd "$PROJECT_DIR"
 
-echo "=== Install dependencies (from build.yml) ==="
+echo "=== Install dependencies (from desktop-app.yml) ==="
 yq '.jobs.build.steps[] | select(.name == "Install dependencies") | .run' "$WORKFLOW" | bash
 
-echo "=== Install macOS dependencies (from build.yml) ==="
+echo "=== Install macOS dependencies (from desktop-app.yml) ==="
 yq '.jobs.build.steps[] | select(.name == "Install macOS dependencies") | .run' "$WORKFLOW" | bash
 
-echo "=== Build app (macOS) (from build.yml) ==="
+echo "=== Build app (macOS) (from desktop-app.yml) ==="
 yq '.jobs.build.steps[] | select(.name == "Build app (macOS)") | .run' "$WORKFLOW" | bash
 
 echo ""

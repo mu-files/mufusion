@@ -68,7 +68,7 @@ def _numpy(src, height, width):
     return image
 
 
-def _muimage(src, height, width):
+def _mufusion(src, height, width):
     image = _rendered(mu, mu.Array(src))
     top, left = _origin(src.shape[0], src.shape[1], height, width)
     patch = mu.full((height, width, 3), _COLOR)
@@ -102,10 +102,10 @@ def test_a_larger_occluder_skips_more_work_than_numpy():
     src = _source(_ROWS, _COLS)
     rows, cols, _ = src.shape
     for height, width in _occluder_sizes(rows, cols):
-        got = _muimage(src, height, width)
+        got = _mufusion(src, height, width)
         expected = _numpy(src, height, width)
         np.testing.assert_allclose(got, expected, rtol=1e-5, atol=1e-5)
-        mu_time = _median_time(lambda: _muimage(src, height, width))
+        mu_time = _median_time(lambda: _mufusion(src, height, width))
         np_time = _median_time(lambda: _numpy(src, height, width))
         message = (
             f"{height}x{width}: mufusion {mu_time * 1e3:.1f} ms, "

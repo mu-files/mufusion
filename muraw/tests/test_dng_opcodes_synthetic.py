@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: BSD-3-Clause
 # Copyright (c) 2026 mu-files
 
-"""DNG opcodes on small synthetic DNGs, read by mu-image, dng_validate and
+"""DNG opcodes on small synthetic DNGs, read by muraw, dng_validate and
 Core Image, each against a NumPy port of the DNG spec.
 
-mu-image must match the spec. A known difference in dng_validate or Core
+muraw must match the spec. A known difference in dng_validate or Core
 Image is a strict xfail that records the measured value. Every case
 writes what it measured into a table of where the renderers differ from
 the spec. The table goes to ``tests/test_outputs/`` on every run. When a
@@ -82,7 +82,7 @@ COREIMAGE_NO_MAP_POLYNOMIAL = (
 )
 COREIMAGE_FIX_VIGNETTE = (
     "Core Image applies FixVignetteRadial, but the change it makes to its "
-    "render does not follow the change to mu-image's (correlation 0.46 to "
+    "render does not follow the change to muraw's (correlation 0.46 to "
     "0.71). Its render also brightens by about 2% near the optical center, "
     "where the opcode's gain is 1, so it changes more than the opcode asks; "
     "what else it does is not known."
@@ -134,7 +134,7 @@ class MapPolynomial:
         )
 
     def mu_reference(self, x):
-        """What mu-image computes by design: the spec."""
+        """What muraw computes by design: the spec."""
         return self.reference(x)
 
 
@@ -165,7 +165,7 @@ class FixVignetteRadial:
         )
 
     def mu_reference(self, x):
-        """What mu-image computes by design: the gain interpolated from a
+        """What muraw computes by design: the gain interpolated from a
         map at every ``VIGNETTE_MAP_SPACING``-th column and row."""
         return self.reference(x, map_spacing=VIGNETTE_MAP_SPACING)
 
@@ -241,7 +241,7 @@ class GainMap:
         )
 
     def mu_reference(self, x):
-        """What mu-image computes by design: the spec."""
+        """What muraw computes by design: the spec."""
         return self.reference(x)
 
 
@@ -325,7 +325,7 @@ class FixBadPixelsConstant:
         return fixed.astype(np.float64) / 65535
 
     def mu_reference(self, x):
-        """What mu-image computes by design: the spec."""
+        """What muraw computes by design: the spec."""
         return self.reference(x)
 
 
@@ -396,7 +396,7 @@ class Case:
 
     def reference(self, mu=False):
         """The stage image the DNG spec gives, or with ``mu`` the one
-        mu-image computes by design. OpcodeList1 output on 16-bit data is
+        muraw computes by design. OpcodeList1 output on 16-bit data is
         stored back as 16-bit codes before linearization."""
         x = self.unit_input()
         for op in self.opcodes:
@@ -480,7 +480,7 @@ CASES = [
     ),
 ]
 
-# The vignette cases are 512 x 512: at mu-image's map spacing of 8 the map
+# The vignette cases are 512 x 512: at muraw's map spacing of 8 the map
 # differs from the per-pixel gain by about 3e-4 there, against 1e-3 at
 # 256 x 256, so the table's per-pixel column stays readable.
 VIGNETTE_SHAPE = (512, 512)
@@ -559,7 +559,7 @@ COREIMAGE_GAIN_MAP_PLANES = (
 )
 COREIMAGE_GAIN_MAP_PER_PLANE = (
     "With a different gain on each of three planes, the change Core Image's "
-    "render makes follows mu-image's less closely (correlation 0.84 to 0.90) "
+    "render makes follows muraw's less closely (correlation 0.84 to 0.90) "
     "than with the same gain on every plane (0.96, measured outside this "
     "table); what it does differently with the planes is not known."
 )
@@ -754,24 +754,24 @@ class ProfileGainTableMap2:
 # clip out-of-range colours differently with or without a gain table.
 PGTM_BASELINE_EXPOSURE = 0.5
 PGTM_LEVEL = 0.5
-# The largest difference measured between mu-image's and dng_validate's
+# The largest difference measured between muraw's and dng_validate's
 # 16-bit renders, 2.0e-4, times 1.1.
 PGTM_TOLERANCE = 2.2e-4
 # The renderers' exposure ramp for a positive exposure is the SDK's
-# linear one only with this mu-image render parameter.
+# linear one only with this muraw render parameter.
 SDK_RENDERING_PARAMS = {"highlight_preserving_exposure": False}
 
 
 COREIMAGE_PGTM_GAMMA = (
     "With a gamma of 0.6, the change Core Image's render makes follows "
-    "mu-image's less closely (correlation 0.87) than with a gamma of 1, "
-    "where it applies the table as mu-image does. mu-image matches "
+    "muraw's less closely (correlation 0.87) than with a gamma of 1, "
+    "where it applies the table as muraw does. muraw matches "
     "dng_validate on both."
 )
 COREIMAGE_PGTM_FLOAT16 = (
     "With the table stored as float16, the change Core Image's render makes "
-    "hardly follows mu-image's (correlation 0.19), against 0.87 for the same "
-    "table stored as float32. mu-image matches dng_validate on both."
+    "hardly follows muraw's (correlation 0.19), against 0.87 for the same "
+    "table stored as float32. muraw matches dng_validate on both."
 )
 
 
@@ -847,10 +847,10 @@ def _coreimage_param(case):
 
 
 SECTION_FILES = "Reading synthetic DNGs"
-COLUMN_MU = "mu-image"
+COLUMN_MU = "muraw"
 COLUMN_SDK = "dng_validate"
 COLUMN_CI = "Core Image"
-COLUMN_MU_SDK = "mu-image against dng_validate"
+COLUMN_MU_SDK = "muraw against dng_validate"
 
 
 @dataclass(frozen=True)
@@ -901,11 +901,11 @@ TABLE = ReferenceTable(
         "Generated by `muraw/tests/test_dng_opcodes_synthetic.py`; run that "
         "module to regenerate this file. Each case writes a small synthetic DNG "
         "and compares each renderer with a NumPy port of the DNG spec. "
-        "mu-image and dng_validate are compared at the stage right after the "
+        "muraw and dng_validate are compared at the stage right after the "
         "opcode list; Core Image gives only a final render, so its cell says "
-        "whether the opcode changes that render the way it changes mu-image's. "
+        "whether the opcode changes that render the way it changes muraw's. "
         "A ProfileGainTableMap2 applies inside the render, so its section "
-        "compares mu-image's final render with dng_validate's instead of a "
+        "compares muraw's final render with dng_validate's instead of a "
         "NumPy port."
     ),
     sections={
@@ -954,8 +954,8 @@ def _sdk_tolerance(case):
 
 
 @pytest.mark.parametrize("case", [pytest.param(c, id=_label(c)) for c in CASES])
-def test_mu_image_matches_the_spec(case, out_dir):
-    """mu-image matches the spec as it computes it by design; for
+def test_muraw_matches_the_spec(case, out_dir):
+    """muraw matches the spec as it computes it by design; for
     FixVignetteRadial that is the gain interpolated from its map, and the
     table also records the difference from the per-pixel gain."""
     reference = case.reference(mu=True)
@@ -974,7 +974,7 @@ def test_mu_image_matches_the_spec(case, out_dir):
             f"per-pixel spec max {_max_diff(got, case.reference()):.1e}"
         )
     TABLE.record(case.section, _label(case), COLUMN_MU, text)
-    assert matches, f"mu-image differs from the spec by {measured}"
+    assert matches, f"muraw differs from the spec by {measured}"
 
 
 @pytest.mark.skipif(not sdk_available(), reason="dng_validate not available")
@@ -995,8 +995,8 @@ def test_dng_validate_matches_the_spec(case, out_dir):
 
 @pytest.mark.skipif(not sdk_available(), reason="dng_validate not available")
 @pytest.mark.parametrize("case", [pytest.param(c, id=_label(c)) for c in TABLE_CASES])
-def test_mu_image_matches_dng_validate_on_a_gain_table(case, out_dir):
-    """mu-image's 16-bit render of a DNG with the table matches
+def test_muraw_matches_dng_validate_on_a_gain_table(case, out_dir):
+    """muraw's 16-bit render of a DNG with the table matches
     dng_validate's, and the table changes dng_validate's render clearly."""
     plain = case.write_plain(out_dir / "plain.dng")
     path = case.write(out_dir / "case.dng")
@@ -1010,7 +1010,7 @@ def test_mu_image_matches_dng_validate_on_a_gain_table(case, out_dir):
         COLUMN_MU_SDK,
         f"matches (max {measured:.1e})" if matches else f"differs: max {measured:.3g}",
     )
-    assert matches, f"mu-image differs from dng_validate by {measured}"
+    assert matches, f"muraw differs from dng_validate by {measured}"
 
 
 @pytest.mark.skipif(not core_image_available, reason="Core Image not available")
@@ -1018,7 +1018,7 @@ def test_mu_image_matches_dng_validate_on_a_gain_table(case, out_dir):
 def test_coreimage_applies_the_opcode(case, out_dir):
     """Core Image reads only 16-bit DNGs, so every case is written as
     uint16. The opcode applies when the change it makes to Core Image's
-    render follows the change it makes to mu-image's."""
+    render follows the change it makes to muraw's."""
     plain = case.write_plain(out_dir / "plain.dng", dtype="uint16")
     path = case.write(out_dir / "case.dng", dtype="uint16")
     mu_change = mu_render(path) - mu_render(plain)

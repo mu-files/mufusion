@@ -42,7 +42,7 @@ def _numpy(quarters, chw):
     return out
 
 
-def _muimage(base, quarters):
+def _mufusion(base, quarters):
     return base.composite(*zip(_origins(), quarters)).realize()
 
 
@@ -69,8 +69,8 @@ def test_a_four_image_mosaic_against_numpy_assignment():
             channel_axis=channel_axis,
         )
         sources = [mu.Array(quarter, channel_axis=channel_axis) for quarter in quarters]
-        np.testing.assert_array_equal(_muimage(base, sources), _numpy(quarters, chw))
-        mu_time = _median_time(lambda: _muimage(base, sources))
+        np.testing.assert_array_equal(_mufusion(base, sources), _numpy(quarters, chw))
+        mu_time = _median_time(lambda: _mufusion(base, sources))
         np_time = _median_time(lambda: _numpy(quarters, chw))
         layout = "CHW" if chw else "packed"
         message = (

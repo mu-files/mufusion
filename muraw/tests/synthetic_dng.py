@@ -3,13 +3,13 @@
 
 """Small DNGs written at test time, with the opcode or tag under test, and the
 three renderers that read them: Adobe's ``dng_validate``, Apple's Core
-Image, and mu-image.
+Image, and muraw.
 
 ``dng_validate`` is compared at the stage right after the opcode list
 (``-2`` for OpcodeList1 and OpcodeList2, ``-3`` for OpcodeList3), so
 color processing and demosaic do not hide the opcode. Core Image renders
 only a final image, so its check is whether the change the opcode makes
-to that render follows the change it makes to mu-image's render.
+to that render follows the change it makes to muraw's render.
 
 ``ReferenceTable`` collects what each test measured and writes it as a
 markdown table of where each renderer differs from the DNG spec.
@@ -254,7 +254,7 @@ def sdk_render(path):
 
 
 def mu_stage(path, stage):
-    """mu-image's image of ``path`` at the same stage as ``sdk_stage``."""
+    """muraw's image of ``path`` at the same stage as ``sdk_stage``."""
     with DngFile(path) as dng:
         page = dng.get_main_page()
         if stage == 3:
