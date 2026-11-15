@@ -16,7 +16,7 @@ from numpy.typing import DTypeLike
 from .splines import CubicSpline
 
 if TYPE_CHECKING:
-    from mufusion import Array
+    import mufusion as mu
 
     from .dngio import DngFile
 
@@ -437,7 +437,7 @@ def decode_dng_coreimage(
     use_xmp: bool = True,
     output_dtype: DTypeLike = np.uint16,
     rendering_params: dict[str, Any] = None,
-) -> "Array":
+) -> mu.Array:
     """
     Decode a DNG file to a ``Array`` using Core Image processing.
 
@@ -464,7 +464,7 @@ def decode_dng_coreimage(
         dng_input = dng_file.filehandle
 
         # Import raw_render for parameter extraction
-        from mufusion import Array
+        import mufusion as mu
 
         from . import raw_render
 
@@ -550,7 +550,9 @@ def decode_dng_coreimage(
 
         # Convert Core Image output to ProPhoto linear for post-rendering
         rgb_prophoto_linear = raw_render.convert_colorspace(
-            Array(ci_output), source_colorspace, raw_render.ColorSpace.PROPHOTO_LINEAR
+            mu.Array(ci_output),
+            source_colorspace,
+            raw_render.ColorSpace.PROPHOTO_LINEAR,
         )
 
         # Apply all tone curves and lens corrections in ProPhoto linear

@@ -10,7 +10,7 @@ from typing import IO, Any, Callable, Iterable
 import numpy as np
 from numpy.typing import DTypeLike
 
-from mufusion import Array
+import mufusion as mu
 
 from .deps import (
     cv2_proxy as cv2,
@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 def write_image(
-    image: np.ndarray | Array,
+    image: np.ndarray | mu.Array,
     output: str | Path | IO[bytes],
     output_format_stream: str = "jpg",
     metadata: MetadataTags | None = None,
@@ -52,7 +52,7 @@ def write_image(
     Returns:
         bool: True if successful, False otherwise
     """
-    if isinstance(image, Array):
+    if isinstance(image, mu.Array):
         image = image.realize()
 
     # Determine output format
@@ -121,7 +121,7 @@ def write_image(
     # Handle JPEG with imagecodecs (8-bit lossy only)
     elif format_ext in (".jpg", ".jpeg"):
         img_8bit = (
-            image if image.dtype == np.uint8 else Array(image).convert_type("uint8")
+            image if image.dtype == np.uint8 else mu.Array(image).convert_type("uint8")
         )
         jpeg_data = imagecodecs.jpeg_encode(img_8bit, level=90)
 
@@ -167,7 +167,7 @@ def write_image(
 def decode_image(
     file: str | Path | IO[bytes],
     output_dtype: DTypeLike = np.uint8,
-) -> Array:
+) -> mu.Array:
     """
     Decode an image file to a ``Array``.
 
@@ -215,7 +215,7 @@ def decode_image(
             raise ValueError("Failed to decode JXL image")
 
         # JXL already returns RGB, just convert dtype if needed
-        return Array(img).convert_type(output_dtype)
+        return mu.Array(img).convert_type(output_dtype)
 
     # Check if it's a TIFF file - use tifffile to avoid OpenCV warnings about EXIF tags
     if isinstance(file, (str, Path)) and str(file).lower().endswith((".tif", ".tiff")):
@@ -224,7 +224,7 @@ def decode_image(
             raise ValueError("Failed to decode TIFF image")
 
         # tifffile returns RGB, just convert dtype if needed
-        return Array(img).convert_type(output_dtype)
+        return mu.Array(img).convert_type(output_dtype)
 
     # Fall back to cv2 for other formats
     if isinstance(file, (str, Path)):
@@ -249,7 +249,7 @@ def decode_image(
     else:
         raise ValueError(f"Unsupported decoded image shape: {img.shape}")
 
-    return Array(img).convert_type(output_dtype)
+    return mu.Array(img).convert_type(output_dtype)
 
 
 def convert_imgformat(

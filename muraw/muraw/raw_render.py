@@ -13,7 +13,6 @@ from numpy.typing import DTypeLike
 
 # Package imports
 import mufusion as mu
-from mufusion import Array, ArrayLike, PerfTimer
 
 from .common import enum_display_name
 from .deps import cv2_proxy as cv2
@@ -103,12 +102,12 @@ def available_demosaic_algorithms() -> list[DemosaicAlgorithm]:
 
 
 def mono_lut(
-    image: Array,
+    image: mu.Array,
     lut: LUT | np.ndarray | None = None,
     src_bits: int | None = None,
     dst_bits: int | None = None,
     dst_dtype: DTypeLike = np.float32,
-) -> Array:
+) -> mu.Array:
     """Apply LUT to monochrome (single channel) image.
 
     Wrapper: validate arguments and append ops to a deferred compute graph.
@@ -220,11 +219,11 @@ def compute_colorspace_matrix(
 
 
 def convert_colorspace(
-    image: Array,
+    image: mu.Array,
     source_space: ColorSpace,
     dest_space: ColorSpace,
     dst_dtype: DTypeLike = np.float32,
-) -> Array:
+) -> mu.Array:
     """Convert image between color spaces with optional dtype conversion.
 
     Wrapper: validate arguments and append ops to a deferred compute graph
@@ -272,7 +271,7 @@ def convert_colorspace(
 
 
 def rgb_transform(
-    image: Array,
+    image: mu.Array,
     input_lut: LUT | np.ndarray | None = None,
     matrix: np.ndarray | None = None,
     output_lut: LUT | np.ndarray | None = None,
@@ -280,7 +279,7 @@ def rgb_transform(
     dst_bits: int | None = None,
     dst_dtype: DTypeLike = np.float32,
     hue_preserving_input_lut: bool = False,
-) -> Array:
+) -> mu.Array:
     """Apply fused LUT→Matrix→LUT color transformation pipeline.
 
     Wrapper: validate arguments and append ops to a deferred compute graph.
@@ -353,10 +352,10 @@ def rgb_transform(
 
 
 def rgb_clip_and_transform(
-    image: Array,
+    image: mu.Array,
     clip_max: np.ndarray,
     matrix: np.ndarray,
-) -> Array:
+) -> mu.Array:
     """Clip RGB channels and apply 3x3 color matrix in a single pass.
 
     Wrapper: validate arguments and append ops to a deferred compute graph.
@@ -415,7 +414,7 @@ def compute_xmp_crop_bounds(
 
 
 def _demosaic_vng_rcd_opencv(
-    cfa: ArrayLike,
+    cfa: mu.ArrayLike,
     cfa_pattern: str,
     algorithm: str = "VNG",
 ) -> np.ndarray:
@@ -436,7 +435,7 @@ def _demosaic_vng_rcd_opencv(
             f"use mu.cfa_demosaic(algorithm={algorithm.lower()!r})"
         )
 
-    if isinstance(cfa, Array):
+    if isinstance(cfa, mu.Array):
         # The kernels read a realized copy, whose first sample starts its
         # pattern.
         origin_row, origin_col = cfa.meta.origin
@@ -468,7 +467,7 @@ def _demosaic_vng_rcd_opencv(
             ) from e
         if arr.dtype != np.float32:
             raise ValueError(f"RCD kernel requires float32 CFA, got {arr.dtype}")
-        demosaic_step = PerfTimer.step("rcd_demosaic")
+        demosaic_step = mu.PerfTimer.step("rcd_demosaic")
         out = _rcd.rcd_demosaic(arr, cfa_pattern)
         demosaic_step.close()
 
@@ -485,7 +484,7 @@ def _demosaic_vng_rcd_opencv(
 
         if arr.dtype != np.uint16:
             raise ValueError(f"VNG kernel requires uint16 CFA, got {arr.dtype}")
-        demosaic_step = PerfTimer.step("vng_demosaic")
+        demosaic_step = mu.PerfTimer.step("vng_demosaic")
         out = _vng.vng_demosaic(arr, cfa_pattern)
         demosaic_step.close()
 
@@ -502,7 +501,7 @@ def _demosaic_vng_rcd_opencv(
             )
         if cfa_pattern not in bayer_map_bgr:
             raise ValueError(f"Unsupported CFA pattern for OPENCV_EA: {cfa_pattern}")
-        demosaic_step = PerfTimer.step("opencv_ea_demosaic")
+        demosaic_step = mu.PerfTimer.step("opencv_ea_demosaic")
         out = cv2.demosaicing(arr, bayer_map_bgr[cfa_pattern])
         demosaic_step.close()
 
@@ -516,12 +515,12 @@ def _demosaic_vng_rcd_opencv(
 
 
 def demosaic(
-    image_data: Array,
+    image_data: mu.Array,
     cfa_pattern: str,
     algorithm: DemosaicAlgorithm = DemosaicAlgorithm.EA,
     clip_max: float | None = None,
     dst_dtype: DTypeLike | None = None,
-) -> Array:
+) -> mu.Array:
     """Demosaic CFA data to RGB.
 
     Wrapper: validate arguments and append ops to a deferred compute graph
@@ -589,7 +588,7 @@ def demosaic(
     else:
         raise ValueError(f"Unsupported demosaic algorithm: {algorithm}")
 
-    rgb = Array(_demosaic_vng_rcd_opencv(work, cfa_pattern, algorithm.name))
+    rgb = mu.Array(_demosaic_vng_rcd_opencv(work, cfa_pattern, algorithm.name))
     return rgb.convert_type(out_dtype, clip_max=clip_max)
 
 
@@ -2734,7 +2733,7 @@ def _merge_map_polynomial_opcodes(
     return merged
 
 
-def _apply_gain_map_opcode(x: Array, opcode: dict[str, Any]) -> Array:
+def _apply_gain_map_opcode(x: mu.Array, opcode: dict[str, Any]) -> mu.Array:
     """A parsed GainMap opcode as one ``mu.apply_gain_map`` node.
 
     DNG places map sample ``(i, j)`` at ``origin + spacing * index`` in
@@ -2771,8 +2770,8 @@ VIGNETTE_MAP_SPACING = 8
 
 
 def _fix_vignette_opcode(
-    x: Array, opcode: dict[str, Any], map_spacing: int = VIGNETTE_MAP_SPACING
-) -> Array:
+    x: mu.Array, opcode: dict[str, Any], map_spacing: int = VIGNETTE_MAP_SPACING
+) -> mu.Array:
     """A parsed FixVignetteRadial opcode as an ``mu.radial_polynomial`` gain
     map and an ``mu.apply_gain_map`` node.
 
@@ -2829,11 +2828,11 @@ def _fix_vignette_opcode(
 
 
 def apply_opcodes(
-    data: Array,
+    data: mu.Array,
     opcodes: list[dict[str, Any]],
     use_bicubic: bool = True,
     opcode_list_name: str = "RGB",
-) -> Array:
+) -> mu.Array:
     """Apply parsed opcodes to image data.
 
     Supported opcodes:
@@ -2956,8 +2955,8 @@ def apply_opcodes(
 
 
 def apply_opcodes_cfa(
-    data: Array, opcodes: list[dict[str, Any]], opcode_list_name: str = "CFA"
-) -> Array:
+    data: mu.Array, opcodes: list[dict[str, Any]], opcode_list_name: str = "CFA"
+) -> mu.Array:
     """Apply parsed opcodes to CFA data.
 
     Handles both OpcodeList1 (pre-linearization, uint16) and OpcodeList2
@@ -3694,7 +3693,7 @@ def _compute_camera_white(
 
 
 def rgb_channel_luts(
-    rgb: ArrayLike,
+    rgb: mu.ArrayLike,
     lut_r: np.ndarray,
     lut_g: np.ndarray,
     lut_b: np.ndarray,
@@ -3703,7 +3702,7 @@ def rgb_channel_luts(
     arr = np.asarray(rgb)
     if arr.ndim != 3 or arr.shape[2] != 3:
         raise ValueError(f"rgb_channel_luts: expected HxWx3, got {arr.shape}")
-    luts_step = PerfTimer.step("rgb_channel_luts")
+    luts_step = mu.PerfTimer.step("rgb_channel_luts")
     out = np.empty_like(arr, dtype=np.float32)
     for i, lut in enumerate((lut_r, lut_g, lut_b)):
         lut = np.asarray(lut, dtype=np.float32).reshape(-1)
@@ -3714,7 +3713,7 @@ def rgb_channel_luts(
 
 
 def radial_distortion(
-    image: ArrayLike,
+    image: mu.ArrayLike,
     k1: float,
     k2: float,
     k3: float,
@@ -3729,7 +3728,7 @@ def radial_distortion(
         raise ValueError("focal_length_mm is required for radial distortion correction")
 
     arr = np.asarray(image)
-    distortion_step = PerfTimer.step("radial_distortion")
+    distortion_step = mu.PerfTimer.step("radial_distortion")
     height, width = arr.shape[:2]
     cx = float(center_x) * width
     cy = float(center_y) * height
@@ -3768,9 +3767,9 @@ def radial_distortion(
 
 
 def apply_post_rendering_operations(
-    rgb_input: Array,
+    rgb_input: mu.Array,
     rendering_params: dict[str, Any],
-) -> Array:
+) -> mu.Array:
     """Apply XMP post-rendering ops in ProPhoto linear space (deferred Array DAG).
 
     Processing pipeline:
@@ -3820,7 +3819,7 @@ def apply_post_rendering_operations(
 
     if has_per_channel:
         identity = np.linspace(0.0, 1.0, 4096, dtype=np.float32)
-        rgb_output = Array(
+        rgb_output = mu.Array(
             rgb_channel_luts(
                 rgb_output,
                 lut_r=channel_luts[0] if channel_luts[0] is not None else identity,
@@ -3875,7 +3874,7 @@ def apply_post_rendering_operations(
                     f"scale_factor: {scale_factor}, center: ({center_x}, {center_y}), "
                     f"focal_length: {focal_length_mm}mm"
                 )
-                rgb_output = Array(
+                rgb_output = mu.Array(
                     radial_distortion(
                         rgb_output,
                         k1=radial_params["k1"],
@@ -3955,9 +3954,9 @@ def _get_ifd0_tag(
 
 def _linearize(
     tags: "DngPage" | "MetadataTags",
-    x: Array,
+    x: mu.Array,
     photometric: str,
-) -> Array:
+) -> mu.Array:
     """Linearize raw sensor data: apply OpcodeList1, normalize, apply OpcodeList2.
 
     Args:
@@ -4167,11 +4166,11 @@ def _linearize(
 
 def _render_to_camera_space(
     tags: "DngPage" | "MetadataTags",
-    x: Array,
+    x: mu.Array,
     photometric: str,
     cfa_pattern: str | None,
     demosaic_algorithm: "DemosaicAlgorithm",
-) -> Array:
+) -> mu.Array:
     """Linearize raw data, demosaic if CFA, apply OpcodeList3 and DefaultCrop.
 
     Args:
@@ -4252,14 +4251,14 @@ def _render_to_camera_space(
 
 def _render_camera_rgb(
     ifd0_tags: "DngPage" | "MetadataTags",
-    rgb_camera: Array,
+    rgb_camera: mu.Array,
     output_dtype: DTypeLike,
     raw_ifd_tags: "DngPage" | "MetadataTags" | None = None,
     rendering_params: dict[str, Any] = None,
     use_xmp: bool = True,
-) -> Array:
+) -> mu.Array:
     try:
-        setup_step = PerfTimer.step("render_setup")
+        setup_step = mu.PerfTimer.step("render_setup")
 
         # Build rendering parameters dict from XMP and overrides (filters out NOOP values)
         extracted_params = supported_xmp_to_dict(ifd0_tags) if use_xmp else {}
@@ -4290,7 +4289,7 @@ def _render_camera_rgb(
         # Setup: Compute matrices (port of dng_render_task::Start)
         # SDK ref: dng_render.cpp lines 869-1070
         # =====================================================================
-        cam2pro_step = PerfTimer.step("camera_to_prophoto")
+        cam2pro_step = mu.PerfTimer.step("camera_to_prophoto")
 
         # Get ColorMatrix1 (XYZ to Camera, 3x3)
         color_matrix1 = _get_ifd0_tag(ifd0_tags, raw_ifd_tags, "ColorMatrix1")
@@ -4558,7 +4557,7 @@ def _render_camera_rgb(
                 pgtm_data = raw_ifd_tags.get_tag("ProfileGainTableMap")
 
         if pgtm_data is not None:
-            pgtm_step = PerfTimer.step("profile_gain_table_map")
+            pgtm_step = mu.PerfTimer.step("profile_gain_table_map")
             try:
                 # PGTM data is already normalized to system byte order by get_page_tags()
                 # SDK ref: dng_ifd.cpp lines 2769-2772 - GetStream uses same stream as file
@@ -4623,10 +4622,10 @@ def _render_camera_rgb(
         # Do not flush inside Graph1/Graph2 — that would split fused work.
         needs_adaptive_hist = highlight_preserving_exposure and exposure > 0.0
         if needs_adaptive_hist:
-            flush_step = PerfTimer.step("camera_space+prophoto")
+            flush_step = mu.PerfTimer.step("camera_space+prophoto")
             rgb_prophoto_arr = rgb_prophoto.realize()
             flush_step.close()
-            lut_step = PerfTimer.step("compute_exposure_ramp_lut")
+            lut_step = mu.PerfTimer.step("compute_exposure_ramp_lut")
             exposure_ramp_lut = compute_exposure_ramp_lut(
                 exposure,
                 shadow_scale,
@@ -4634,10 +4633,10 @@ def _render_camera_rgb(
                 highlight_preserving_exposure,
                 camera_space_data=rgb_prophoto_arr,
             )
-            rgb_prophoto = Array(rgb_prophoto_arr)
+            rgb_prophoto = mu.Array(rgb_prophoto_arr)
             lut_step.close()
         else:
-            lut_step = PerfTimer.step("compute_exposure_ramp_lut")
+            lut_step = mu.PerfTimer.step("compute_exposure_ramp_lut")
             exposure_ramp_lut = compute_exposure_ramp_lut(
                 exposure,
                 shadow_scale,
@@ -4709,7 +4708,7 @@ def _render_camera_rgb(
             # Start combined curve with exposure_ramp
             combined_curve = LUT(exposure_ramp_lut)
 
-        lut_step = PerfTimer.step("build_combined_lut")
+        lut_step = mu.PerfTimer.step("build_combined_lut")
         # Chain: apply exposure_tone to output
         combined_curve = combined_curve.compose_output(
             lambda y: exposure_tone(y, exposure, highlight_preserving_exposure)
@@ -4824,12 +4823,12 @@ def _render_camera_rgb(
 
 def _render_camera_monochrome(
     ifd0_tags: "DngPage" | "MetadataTags",
-    mono_camera: Array,
+    mono_camera: mu.Array,
     output_dtype: DTypeLike,
     raw_ifd_tags: "DngPage" | "MetadataTags" | None = None,
     rendering_params: dict[str, Any] = None,
     use_xmp: bool = True,
-) -> Array:
+) -> mu.Array:
     """Render monochrome linear data to output grayscale Array.
 
     This is a simplified rendering pipeline for monochrome images that skips
@@ -4906,10 +4905,10 @@ def _render_camera_monochrome(
         # Do not flush inside Graph1/Graph2 — that would split fused work.
         needs_adaptive_hist = highlight_preserving_exposure and exposure > 0.0
         if needs_adaptive_hist:
-            flush_step = PerfTimer.step("camera_space")
+            flush_step = mu.PerfTimer.step("camera_space")
             mono_camera_arr = mono_camera.realize()
             flush_step.close()
-            lut_step = PerfTimer.step("compute_exposure_ramp_lut")
+            lut_step = mu.PerfTimer.step("compute_exposure_ramp_lut")
             exposure_ramp_lut = compute_exposure_ramp_lut(
                 exposure,
                 shadow_scale,
@@ -4917,10 +4916,10 @@ def _render_camera_monochrome(
                 highlight_preserving_exposure,
                 camera_space_data=mono_camera_arr,
             )
-            mono_camera = Array(mono_camera_arr)
+            mono_camera = mu.Array(mono_camera_arr)
             lut_step.close()
         else:
-            lut_step = PerfTimer.step("compute_exposure_ramp_lut")
+            lut_step = mu.PerfTimer.step("compute_exposure_ramp_lut")
             exposure_ramp_lut = compute_exposure_ramp_lut(
                 exposure,
                 shadow_scale,

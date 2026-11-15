@@ -68,9 +68,9 @@ def cli(verbose, timing):
     )
 
     if timing != "off":
-        from mufusion import set_engine_timing
+        import mufusion as mu
 
-        set_engine_timing(timing)
+        mu.set_engine_timing(timing)
 
 
 @cli.command(name="convert-image")
@@ -884,13 +884,13 @@ def dng_copy(
 
     Apply scale, demosaic (CFA to LINEAR_RAW), strip tags, and/or generate preview.
     """
+    import mufusion as mu
     import muraw
-    from mufusion import PerfTimer
 
     from . import dngio
     from .tiff_metadata import MetadataTags
 
-    timer = PerfTimer("dng_copy", start_time=muraw._app_start_time)
+    timer = mu.PerfTimer("dng_copy", start_time=muraw._app_start_time)
 
     # Map algorithm string to enum
     demosaic_algorithm_enum = DemosaicAlgorithm.lookup(demosaic_algorithm)
@@ -1056,7 +1056,7 @@ def dng_convert(
     """Convert DNG file to image file (.tif, .jpg, .png, .jxl) with processing options."""
     import numpy as np
 
-    from mufusion import PerfTimer
+    import mufusion as mu
 
     from .dngio import DngFile
     from .imgio import convert_dng
@@ -1078,7 +1078,7 @@ def dng_convert(
 
     timing = click.get_current_context().find_root().params.get("timing", "off")
     # Always time convert for the success line; --timing only controls the report detail.
-    render_timer = PerfTimer("render_raw")
+    render_timer = mu.PerfTimer("render_raw")
     try:
         # Open DNG and select page
         with DngFile(input_file) as dng:

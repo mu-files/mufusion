@@ -20,7 +20,6 @@ import numpy as np
 from numpy.typing import DTypeLike
 
 import mufusion as mu
-from mufusion import Array, PerfTimer
 
 # Package imports
 from . import raw_render
@@ -110,7 +109,7 @@ class DngPage(tifffile.TiffPage):
             self._is_ifd0 = True  # No parent or pages, assume IFD0
 
     @property
-    def parent(self) -> "DngFile":
+    def parent(self) -> DngFile:
         """Return parent DngFile (overrides TiffPage.parent for type consistency)."""
         # Access the underlying TiffFile parent and ensure it's a DngFile
         tiff_parent = self.__dict__["parent"]
@@ -125,7 +124,7 @@ class DngPage(tifffile.TiffPage):
         self.__dict__["parent"] = value
 
     @property
-    def ifd0(self) -> "DngPage":
+    def ifd0(self) -> DngPage:
         """Return IFD0 (returns self if this page IS IFD0)."""
         # Use DngFile.ifd0 property which properly wraps pages[0]
         return self.parent.ifd0
@@ -520,7 +519,7 @@ class DngPage(tifffile.TiffPage):
         else:
             return self.asarray()
 
-    def get_cfa(self) -> tuple[Array, str] | None:
+    def get_cfa(self) -> tuple[mu.Array, str] | None:
         """Extract CFA data and pattern from this page.
 
         Returns:
@@ -531,7 +530,7 @@ class DngPage(tifffile.TiffPage):
         if not self.is_cfa:
             return None
 
-        step = PerfTimer.step("decode_cfa (c++)")
+        step = mu.PerfTimer.step("decode_cfa (c++)")
         raw_cfa = self._decode_raw()
         step.close()
 
@@ -541,15 +540,15 @@ class DngPage(tifffile.TiffPage):
         col_interleave = self.get_tag("ColumnInterleaveFactor")
         row_interleave = self.get_tag("RowInterleaveFactor")
         if col_interleave == 2 and row_interleave == 2:
-            step = PerfTimer.step("deswizzle_cfa")
+            step = mu.PerfTimer.step("deswizzle_cfa")
             raw_cfa = deswizzle_cfa_data(raw_cfa)
             step.close()
 
         cfa_pattern = self.get_tag("CFAPattern", str) or "RGGB"
 
-        return Array(raw_cfa), cfa_pattern
+        return mu.Array(raw_cfa), cfa_pattern
 
-    def get_linear_raw(self) -> Array | None:
+    def get_linear_raw(self) -> mu.Array | None:
         """Extract LINEAR_RAW data from this page.
 
         Returns:
@@ -559,17 +558,17 @@ class DngPage(tifffile.TiffPage):
         if not self.is_linear_raw:
             return None
 
-        step = PerfTimer.step("decode_linear_raw (c++)")
+        step = mu.PerfTimer.step("decode_linear_raw (c++)")
         raw_linear = self._decode_raw()
         step.close()
 
         if raw_linear is None:
             return None
-        return Array(raw_linear)
+        return mu.Array(raw_linear)
 
     def get_camera_raw(
         self, demosaic_algorithm: DemosaicAlgorithm = DemosaicAlgorithm.EA
-    ) -> Array | None:
+    ) -> mu.Array | None:
         """Extract the camera-space intermediate from a raw page for the rendering pipeline.
 
         This corresponds to the `camera_data` input passed into
@@ -618,7 +617,7 @@ class DngPage(tifffile.TiffPage):
     def decode_to_rgb(
         self,
         output_dtype: DTypeLike = np.uint8,
-    ) -> Array | None:
+    ) -> mu.Array | None:
         """Decode any DNG page to an RGB ``Array``.
 
         For raw pages (CFA, LINEAR_RAW), renders with default parameters.
@@ -639,7 +638,7 @@ class DngPage(tifffile.TiffPage):
         # Non-raw pages - let tifffile decode
         # Note: tifffile automatically converts JPEG-compressed YCBCR to RGB
         try:
-            result = Array(self.asarray())
+            result = mu.Array(self.asarray())
         except Exception as e:
             logger.error(
                 f"Failed to decode page (photometric={self.photometric_name}): {e}"
@@ -660,7 +659,7 @@ class DngPage(tifffile.TiffPage):
         strict: bool = True,
         use_xmp: bool = True,
         rendering_params: dict[str, Any] = None,
-    ) -> "Array | None":
+    ) -> mu.Array | None:
         """Render raw DNG page to an RGB ``Array`` with optional XMP adjustments.
 
         Applies full DNG raw processing pipeline: linearization, black/white level,
@@ -951,18 +950,18 @@ class DngFile(tifffile.TiffFile):
         method = getattr(page, method_name)
         return method(*args, **kwargs)
 
-    def get_cfa(self) -> tuple[Array, str] | None:
+    def get_cfa(self) -> tuple[mu.Array, str] | None:
         """See `DngPage.get_cfa`."""
         return self._forward_main_page("get_cfa")
 
-    def get_linear_raw(self) -> Array | None:
+    def get_linear_raw(self) -> mu.Array | None:
         """See `DngPage.get_linear_raw`."""
         return self._forward_main_page("get_linear_raw")
 
     def get_camera_raw(
         self,
         demosaic_algorithm: DemosaicAlgorithm = DemosaicAlgorithm.EA,
-    ) -> Array | None:
+    ) -> mu.Array | None:
         """Extract camera-space data from main raw page.
 
         See `DngPage.get_camera_raw` for full documentation.
@@ -986,7 +985,7 @@ class DngFile(tifffile.TiffFile):
         use_xmp: bool = True,
         rendering_params: dict[str, Any] = None,
         scale: float | None = None,
-    ) -> "Array | None":
+    ) -> mu.Array | None:
         """Render main raw DNG page to an RGB ``Array`` with optional scaling.
 
         When scale is provided, automatically selects the optimal SubIFD pyramid
@@ -1052,12 +1051,12 @@ class DngFile(tifffile.TiffFile):
                     scale_needed = True
                 else:
                     # Downscaling: materialize around OpenCV resize for this PR
-                    pre = PerfTimer.step("pre_scale (opencv)")
+                    pre = mu.PerfTimer.step("pre_scale (opencv)")
                     camera_arr = camera_data.realize()
                     camera_arr = cv2.resize(
                         camera_arr, (target_w, target_h), interpolation=cv2.INTER_AREA
                     )
-                    camera_data = Array(camera_arr)
+                    camera_data = mu.Array(camera_arr)
                     pre.close()
 
         # Branch based on monochrome vs color
@@ -1097,12 +1096,12 @@ class DngFile(tifffile.TiffFile):
             if orientation in (Orientation.ROTATE_90_CW, Orientation.ROTATE_270_CW):
                 final_w, final_h = final_h, final_w
 
-            post = PerfTimer.step("post_scale (opencv)")
+            post = mu.PerfTimer.step("post_scale (opencv)")
             rendered_arr = rendered_image.realize()
             rendered_arr = cv2.resize(
                 rendered_arr, (final_w, final_h), interpolation=cv2.INTER_LINEAR
             )
-            rendered_image = Array(rendered_arr)
+            rendered_image = mu.Array(rendered_arr)
             post.close()
 
         return rendered_image
@@ -1110,7 +1109,7 @@ class DngFile(tifffile.TiffFile):
     def get_preview_rgb(
         self,
         output_dtype: DTypeLike = np.uint8,
-    ) -> Array | None:
+    ) -> mu.Array | None:
         """Decode preview image from IFD0 to an RGB ``Array``.
 
         In most DNG files, IFD0 contains a preview image. This method verifies
@@ -1560,7 +1559,7 @@ def write_dng(
 
     def _write_page_ifd(
         writer: tifffile.TiffWriter,
-        page: "DngPage",
+        page: DngPage,
         *,
         raw_ifd_args: dict[str, Any],
     ) -> None:
@@ -2089,7 +2088,7 @@ def create_dng(
     *,
     ifd0_spec: IfdSpec,
     subifds: Sequence[IfdSpec] | None = None,
-) -> "DngFile":
+) -> DngFile:
     """Create a DNG file in memory and return as DngFile object.
 
     This is a convenience wrapper around write_dng that writes to an in-memory
@@ -2221,7 +2220,7 @@ def _generate_pyramid(
         if min(next_h, next_w) <= 16:
             break
 
-        step = PerfTimer.step(f"pyramid_level_{len(levels)}_filter_{filter.name}")
+        step = mu.PerfTimer.step(f"pyramid_level_{len(levels)}_filter_{filter.name}")
         filtered = cv2.sepFilter2D(
             current,
             -1,
@@ -2302,7 +2301,7 @@ def _write_dng_with_params(
     """
     # Extract camera RGB (always needed if we didn't take fast return path)
     logger.info(f"Extracting camera RGB (demosaic={demosaic}, scale={scale})")
-    extract_step = PerfTimer.step("extract_camera_rgb")
+    extract_step = mu.PerfTimer.step("extract_camera_rgb")
     cfa_pattern = None
     if isinstance(main_spec, IfdPageSpec):
         if main_spec.page.is_linear_raw:
@@ -2318,7 +2317,7 @@ def _write_dng_with_params(
         photometric = main_spec.page.photometric_name
         src_dtype = raw_t.dtype
     else:
-        raw_t = Array(main_spec.data)
+        raw_t = mu.Array(main_spec.data)
         photometric = main_spec.photometric
         src_dtype = raw_t.dtype
         if photometric == "CFA":
@@ -2342,7 +2341,7 @@ def _write_dng_with_params(
     if (demosaic and photometric == "CFA") or scale != 1.0:
         # Apply scaling if needed
         if scale != 1.0:
-            step = PerfTimer.step("apply_scaling")
+            step = mu.PerfTimer.step("apply_scaling")
             logger.info(f"Applying scale: {scale}")
             h, w = camera_raw.shape[:2]
             new_h, new_w = int(h * scale), int(w * scale)
@@ -2370,7 +2369,7 @@ def _write_dng_with_params(
 
         # change main_spec - preserve original input dtype
         main_spec = IfdDataSpec(
-            data=Array(camera_raw).convert_type(src_dtype).realize(),
+            data=mu.Array(camera_raw).convert_type(src_dtype).realize(),
             photometric="LINEAR_RAW",
             subfiletype=SubFileType.MAIN_IMAGE,
             encoding=main_encoding,
@@ -2400,7 +2399,7 @@ def _write_dng_with_params(
         num_pyramid_levels = max(num_pyramid_levels, pyramid.levels + 1)
 
     # Generate pyramid - use CATMULL_ROM for faster preview generation
-    step = PerfTimer.step("generate_pyramid")
+    step = mu.PerfTimer.step("generate_pyramid")
     filter_type = pyramid.filter if pyramid else PyramidFilter.CATMULL_ROM
     pyramid_images = _generate_pyramid(
         camera_raw, num_pyramid_levels, filter=filter_type
@@ -2419,7 +2418,7 @@ def _write_dng_with_params(
         for level_idx in range(1, max_pyramid_level):
             level_data = pyramid_images[level_idx]
             pyramid_spec = IfdDataSpec(
-                data=Array(level_data).convert_type(src_dtype).realize(),
+                data=mu.Array(level_data).convert_type(src_dtype).realize(),
                 photometric="LINEAR_RAW",
                 subfiletype=SubFileType.PREVIEW_IMAGE,
                 encoding=pyramid.encoding,
@@ -2430,7 +2429,7 @@ def _write_dng_with_params(
     # Generate rendered preview if requested
     if not preview:
         # No preview: IFD0 = main, SubIFD0+ = pyramid
-        step = PerfTimer.step("write_dng_no_preview")
+        step = mu.PerfTimer.step("write_dng_no_preview")
         write_dng(
             destination_file=destination_file,
             ifd0_spec=main_spec,
@@ -2465,7 +2464,7 @@ def _write_dng_with_params(
         )
 
         # Build preview rendering params: XMP (without crop) + user overrides
-        step = PerfTimer.step("render_preview")
+        step = mu.PerfTimer.step("render_preview")
         preview_rendering_params = {}
 
         # 1) Read XMP params and convert to dict
@@ -2498,7 +2497,7 @@ def _write_dng_with_params(
             mono = raw_render._render_camera_monochrome(
                 ifd0_tags=ifd0_tags_no_orientation,
                 raw_ifd_tags=main_spec.extratags,
-                mono_camera=Array(pyramid_images[preview_level_idx]),
+                mono_camera=mu.Array(pyramid_images[preview_level_idx]),
                 output_dtype=np.uint8,
                 rendering_params=preview_rendering_params,
                 use_xmp=False,
@@ -2514,7 +2513,7 @@ def _write_dng_with_params(
             rendered_preview = raw_render._render_camera_rgb(
                 ifd0_tags=ifd0_tags_no_orientation,
                 raw_ifd_tags=main_spec.extratags,
-                rgb_camera=Array(pyramid_images[preview_level_idx]),
+                rgb_camera=mu.Array(pyramid_images[preview_level_idx]),
                 output_dtype=np.uint8,
                 rendering_params=preview_rendering_params,
                 use_xmp=False,
@@ -2540,7 +2539,7 @@ def _write_dng_with_params(
         )
 
         # Write: IFD0 = preview, SubIFD0 = main, SubIFD1+ = pyramid
-        step = PerfTimer.step("write_dng_with_preview")
+        step = mu.PerfTimer.step("write_dng_with_preview")
         write_dng(
             destination_file=destination_file,
             ifd0_spec=preview_spec,
@@ -2576,7 +2575,7 @@ def write_dng_from_array(
         num_compression_workers: Number of parallel compression workers (default: 1)
     """
 
-    with PerfTimer("write_dng_from_array", log=logger):
+    with mu.PerfTimer("write_dng_from_array", log=logger):
         # fast path - only one ifd requested and no data transformations
         if not (
             preview
@@ -2634,7 +2633,7 @@ def create_dng_from_array(
     *,
     preview: PreviewParams | None = None,
     pyramid: PyramidParams | None = None,
-) -> "DngFile":
+) -> DngFile:
     """Create a DNG file from array data in memory and return as DngFile object.
 
     This is a convenience wrapper around write_dng_from_array that writes to an
@@ -2698,7 +2697,7 @@ def write_dng_from_page(
         RuntimeError: If DNG processing fails
     """
 
-    with PerfTimer("write_dng_from_page", log=logger):
+    with mu.PerfTimer("write_dng_from_page", log=logger):
         # Ensure we have an IfdPageSpec
         source_page_spec = (
             page if isinstance(page, IfdPageSpec) else IfdPageSpec(page=page)
@@ -2766,7 +2765,7 @@ def write_dng_from_page(
             if preview is None and not (pyramid and pyramid.levels > 0):
                 logger.info("Using fast path for main spec (no extra params given)")
 
-                step = PerfTimer.step("write_dng_fast_path")
+                step = mu.PerfTimer.step("write_dng_fast_path")
                 write_dng(
                     destination_file=destination_file,
                     ifd0_spec=main_spec,
@@ -2803,7 +2802,7 @@ def create_dng_from_page(
     copy_ifd0_tags: bool = True,
     ifd0_extratags: MetadataTags | None = None,
     ifd0_strip_tags: set[str] | None = None,
-) -> "DngFile":
+) -> DngFile:
     """Create a DNG file from a page in memory and return as DngFile object.
 
     This is a convenience wrapper around write_dng_from_page that writes to an
@@ -2855,7 +2854,7 @@ def decode_dng(
     rendering_params: dict[str, Any] = None,
     strict: bool = True,
     scale: float = 1.0,
-) -> tuple[Array, "MetadataTags"]:
+) -> tuple[mu.Array, "MetadataTags"]:
     """
     Decode a DNG file or page to a ``Array`` with metadata.
 
