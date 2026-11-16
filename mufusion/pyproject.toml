@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "mufusion"
 # Released with muraw at the same version.
-version = "0.1.20261114.1951"
+version = "0.1.20261116.1011"
 description = "A lazy, fused image compute graph with a NumPy interface"
 authors = [{name = "mu-files", email = "info@mu-files.com"}]
 readme = "README.md"

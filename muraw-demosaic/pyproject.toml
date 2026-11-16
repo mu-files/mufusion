@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "muraw-demosaic"
-version = "0.1.20261114.1951"
+version = "0.1.20261116.1011"
 description = "VNG and RCD demosaicing for muraw, built from source"
 authors = [{name = "mu-files", email = "info@mu-files.com"}]
 readme = "README.md"
