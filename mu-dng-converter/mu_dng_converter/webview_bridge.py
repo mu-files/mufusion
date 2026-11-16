@@ -570,13 +570,13 @@ class WebViewBridge:
 
     def get_eula_text(self) -> str:
         """Return the EULA text for display in a JS modal."""
-        from main import EULA_TEXT
+        from mu_dng_converter.app import EULA_TEXT
 
         return EULA_TEXT
 
     def accept_eula(self):
         """Record EULA acceptance. The JS side closes the modal."""
-        from main import _save_eula_accepted
+        from mu_dng_converter.app import _save_eula_accepted
 
         _save_eula_accepted()
 

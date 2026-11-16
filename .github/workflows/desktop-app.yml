@@ -40,8 +40,10 @@ jobs:
       - name: Install dependencies
         run: |
           pip install pyinstaller Pillow
-          pip install -e ../mufusion
-          pip install -e "../muraw[all]"
+          # Not editable: PyInstaller cannot see packages behind setuptools'
+          # editable import finder.
+          pip install ../mufusion
+          pip install "../muraw[all]"
           pip install ../muraw-demosaic
           pip install -e .
 
@@ -89,19 +91,17 @@ jobs:
           VERSION="${GITHUB_REF_NAME#app-v}"
           echo "Building version: $VERSION"
           
-          # Inject version into main.py
-          sed -i '' "s/__version__ = \"0.0.0\"/__version__ = \"$VERSION\"/" main.py
+          # Inject version into the app module
+          sed -i '' "s/__version__ = \"0.0.0\"/__version__ = \"$VERSION\"/" mu_dng_converter/app.py
           
           pyinstaller --name "mu-dng-converter" \
             --windowed \
             --onedir \
-            --add-data "web:web" \
-            --add-data "assets:assets" \
             --add-data "LICENSE:." \
             --add-data "THIRD_PARTY_NOTICES.md:." \
             --add-data "../muraw-demosaic/LICENSES/LICENSE-CDDL-1.0:licenses" \
             --add-data "../mufusion/LICENSES/LICENSE-ARM-OPTIMIZED-ROUTINES:licenses" \
-            --icon "assets/icon.png" \
+            --icon "mu_dng_converter/assets/icon.png" \
             --osx-bundle-identifier "com.mufiles.mu-dng-converter" \
             --additional-hooks-dir=. \
             main.py
@@ -128,18 +128,16 @@ jobs:
           VERSION="${GITHUB_REF_NAME#app-v}"
           echo "Building version: $VERSION"
           
-          # Inject version into main.py (Windows sed syntax)
-          sed -i "s/__version__ = \"0.0.0\"/__version__ = \"$VERSION\"/" main.py
+          # Inject version into the app module (Windows sed syntax)
+          sed -i "s/__version__ = \"0.0.0\"/__version__ = \"$VERSION\"/" mu_dng_converter/app.py
           
           pyinstaller --name "mu-dng-converter" \
             --windowed \
             --onedir \
-            --add-data "web;web" \
-            --add-data "assets;assets" \
             --add-data "LICENSE;." \
             --add-data "THIRD_PARTY_NOTICES.md;." \
             --add-data "../muraw-demosaic/LICENSES/LICENSE-CDDL-1.0;licenses" \
-            --icon "assets/icon.png" \
+            --icon "mu_dng_converter/assets/icon.png" \
             --additional-hooks-dir=. \
             main.py
         env:
@@ -170,14 +168,12 @@ jobs:
           VERSION="${GITHUB_REF_NAME#app-v}"
           echo "Building version: $VERSION"
           
-          # Inject version into main.py
-          sed -i "s/__version__ = \"0.0.0\"/__version__ = \"$VERSION\"/" main.py
+          # Inject version into the app module
+          sed -i "s/__version__ = \"0.0.0\"/__version__ = \"$VERSION\"/" mu_dng_converter/app.py
           
           pyinstaller --name "mu-dng-converter" \
             --windowed \
             --onedir \
-            --add-data "web:web" \
-            --add-data "assets:assets" \
             --add-data "LICENSE:." \
             --add-data "THIRD_PARTY_NOTICES.md:." \
             --add-data "../muraw-demosaic/LICENSES/LICENSE-CDDL-1.0:licenses" \
