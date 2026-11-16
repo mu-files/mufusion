@@ -50,8 +50,8 @@ print(next(s["run"] for s in steps if s.get("name") == sys.argv[2]))
 ' "$WORKFLOW" "$1"
 }
 
-# The version the build step reads from the tag name
-export GITHUB_REF_NAME="${GITHUB_REF_NAME:-app-v0.0.0}"
+# The version the build step reads; the workflow's plan job sets it
+export APP_VERSION="${APP_VERSION:-0.0.0}"
 
 # Extract and run steps from desktop-app.yml
 cd "$PROJECT_DIR"

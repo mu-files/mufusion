@@ -1,30 +1,68 @@
 name: Build Desktop Apps
 
+# An app-v* tag builds and releases every platform. A manual run builds
+# the platforms it names, and with a version it also releases them under
+# a new app-v<version> tag; without one it only uploads the builds as
+# artifacts, at version 0.0.0.
 on:
   push:
     tags:
       - 'app-v*'
   workflow_dispatch:
+    inputs:
+      platforms:
+        description: Platforms to build
+        type: choice
+        options: [all, macos, windows, linux]
+        default: all
+      version:
+        description: Version to release, such as 0.1.20261116.1030; empty builds without a release
+        type: string
+        default: ''
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - id: plan
+        env:
+          PLATFORMS: ${{ inputs.platforms || 'all' }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
+          import json, os
+          builds = [
+              {"os": "macos-15", "platform": "macos", "extra-args": "--arch arm64"},
+              {"os": "windows-latest", "platform": "windows", "extra-args": ""},
+              {"os": "ubuntu-latest", "platform": "linux", "extra-args": ""},
+          ]
+          wanted = os.environ["PLATFORMS"]
+          include = [b for b in builds if wanted in ("all", b["platform"])]
+          ref = os.environ["GITHUB_REF_NAME"]
+          if os.environ["INPUT_VERSION"]:
+              version = os.environ["INPUT_VERSION"]
+          elif os.environ["GITHUB_REF_TYPE"] == "tag" and ref.startswith("app-v"):
+              version = ref.removeprefix("app-v")
+          else:
+              version = "0.0.0"
+          print("matrix=" + json.dumps({"include": include}))
+          print("version=" + version)
+          EOF
+
   build:
+    needs: plan
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: macos-15
-            platform: macos
-            extra-args: "--arch arm64"
-          - os: windows-latest
-            platform: windows
-            extra-args: ""
-          - os: ubuntu-latest
-            platform: linux
-            extra-args: ""
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
+    env:
+      APP_VERSION: ${{ needs.plan.outputs.version }}
     defaults:
       run:
         working-directory: mu-dng-converter
@@ -87,8 +125,7 @@ jobs:
         if: matrix.platform == 'macos'
         shell: bash
         run: |
-          # Extract version from tag (e.g., app-v0.1.20260711.1657 -> 0.1.20260711.1657)
-          VERSION="${GITHUB_REF_NAME#app-v}"
+          VERSION="$APP_VERSION"
           echo "Building version: $VERSION"
           
           # Inject version into the app module
@@ -124,8 +161,7 @@ jobs:
         if: matrix.platform == 'windows'
         shell: bash
         run: |
-          # Extract version from tag
-          VERSION="${GITHUB_REF_NAME#app-v}"
+          VERSION="$APP_VERSION"
           echo "Building version: $VERSION"
           
           # Inject version into the app module (Windows sed syntax)
@@ -164,8 +200,7 @@ jobs:
         if: matrix.platform == 'linux'
         shell: bash
         run: |
-          # Extract version from tag
-          VERSION="${GITHUB_REF_NAME#app-v}"
+          VERSION="$APP_VERSION"
           echo "Building version: $VERSION"
           
           # Inject version into the app module
@@ -272,8 +307,7 @@ jobs:
         if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          $tag = "${{ github.ref_name }}"
-          $version = $tag -replace '^app-v', ''
+          $version = $env:APP_VERSION
           $sourceDir = "${{ github.workspace }}\mu-dng-converter\dist\mu-dng-converter"
           $issScript = "${{ github.workspace }}\mu-dng-converter\installer\windows.iss"
           $outputDir = "${{ github.workspace }}\mu-dng-converter"
@@ -315,8 +349,8 @@ jobs:
           retention-days: 30
 
   release:
-    needs: build
-    if: startsWith(github.ref, 'refs/tags/app-v')
+    needs: [plan, build]
+    if: startsWith(github.ref, 'refs/tags/app-v') || inputs.version != ''
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -327,10 +361,17 @@ jobs:
         with:
           merge-multiple: true
 
-      - name: Create GitHub Release (draft)
+      # A manual run creates its tag on the commit it built. A tag created
+      # with the workflow's own token starts no other workflow run, so this
+      # one does not build again. A file of a platform that was not built
+      # is left out of the release.
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: app-v${{ needs.plan.outputs.version }}
+          target_commitish: ${{ github.sha }}
           draft: false
+          fail_on_unmatched_files: false
           files: |
             mu-dng-converter-macos.zip
             mu-dng-converter-windows-setup.exe

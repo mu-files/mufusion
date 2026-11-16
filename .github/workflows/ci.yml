@@ -92,11 +92,24 @@ jobs:
       # mufusion compiles nothing: one abi3 wheel per platform, holding
       # that platform's CoreEngine binary.
       - name: Build mufusion wheel
+        if: runner.os != 'Linux'
         run: python -m build --wheel --outdir ../dist
         working-directory: mufusion
         env:
           # Prebuilt CoreEngine binary requires macOS 14+
           MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+      # PyPI takes only manylinux wheels for Linux. auditwheel gives the
+      # wheel that tag, and fails if the CoreEngine binary needs a newer
+      # glibc or libstdc++ than manylinux_2_34 allows.
+      - name: Build mufusion wheel (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          python -m build --wheel --outdir "$RUNNER_TEMP/linux-wheel"
+          pip install auditwheel
+          auditwheel repair --plat "manylinux_2_34_$(uname -m)" \
+            --wheel-dir ../dist "$RUNNER_TEMP"/linux-wheel/mufusion-*.whl
+        working-directory: mufusion
 
       # muraw is pure Python: the same py3-none-any wheel on every platform.
       - name: Build muraw wheel

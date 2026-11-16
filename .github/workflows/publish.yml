@@ -33,8 +33,9 @@ jobs:
           echo "Publishing the artifacts of ci.yml run $run_id"
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
 
-      # Publish the sdists and the Windows wheels of mufusion and muraw
-      # only. macOS/Linux wheels are CI-only.
+      # The sdists and every platform's wheels. Each wheels artifact also
+      # holds muraw's one py3-none-any wheel, so the copies of it land on
+      # the same file in dist/.
       - uses: actions/download-artifact@v4
         with:
           name: sdist
@@ -44,7 +45,8 @@ jobs:
 
       - uses: actions/download-artifact@v4
         with:
-          name: wheels-windows
+          pattern: wheels-*
+          merge-multiple: true
           path: dist
           run-id: ${{ steps.build.outputs.run_id }}
           github-token: ${{ github.token }}
